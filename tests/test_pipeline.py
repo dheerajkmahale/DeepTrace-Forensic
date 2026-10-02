@@ -632,6 +632,314 @@ def test_celebrity_identity_overlap_report():
     assert len(report["val_test_overlap"]) == 0
 
 
+def test_resume_skips_finished_videos(tmp_path):
+    """Test resume functionality: existing readable clips are skipped and not reprocessed."""
+    raw_dir = tmp_path / "raw"
+    processed_dir = tmp_path / "processed"
+
+    _make_dummy_video(str(raw_dir / "Celeb-real" / "id0_0000.mp4"), num_frames=12)
+    _make_dummy_video(str(raw_dir / "Celeb-synthesis" / "id0_id1_0000.mp4"), num_frames=12)
+
+    meta_df1 = run_preprocessing(
+        raw_dir=str(raw_dir),
+        processed_dir=str(processed_dir),
+        seq_len=6,
+        img_size=32,
+        clips_per_video=2,
+        no_face_detect=True,
+        force=False,
+    )
+    assert len(meta_df1) == 4
+
+    clips_dir = processed_dir / "clips"
+    clip_files = list(clips_dir.glob("*.npy"))
+    assert len(clip_files) == 4
+    mtimes_before = {p: p.stat().st_mtime_ns for p in clip_files}
+
+    # Run again without force (should resume and skip extraction)
+    meta_df2 = run_preprocessing(
+        raw_dir=str(raw_dir),
+        processed_dir=str(processed_dir),
+        seq_len=6,
+        img_size=32,
+        clips_per_video=2,
+        no_face_detect=True,
+        force=False,
+    )
+    assert len(meta_df2) == 4
+    pd.testing.assert_frame_equal(meta_df1, meta_df2)
+
+    mtimes_after = {p: p.stat().st_mtime_ns for p in clip_files}
+    assert mtimes_before == mtimes_after, "Clips should not be rewritten when resuming"
+
+
+def test_force_reprocesses_all_videos(tmp_path):
+    """Test --force flag forces reprocessing and rewriting of all clips."""
+    import time
+    raw_dir = tmp_path / "raw"
+    processed_dir = tmp_path / "processed"
+
+    _make_dummy_video(str(raw_dir / "Celeb-real" / "id0_0000.mp4"), num_frames=12)
+
+    run_preprocessing(
+        raw_dir=str(raw_dir),
+        processed_dir=str(processed_dir),
+        seq_len=6,
+        img_size=32,
+        clips_per_video=2,
+        no_face_detect=True,
+    )
+
+    clips_dir = processed_dir / "clips"
+    clip_files = list(clips_dir.glob("*.npy"))
+    assert len(clip_files) == 2
+    mtimes_before = {p: p.stat().st_mtime for p in clip_files}
+
+    time.sleep(1.1)
+
+    run_preprocessing(
+        raw_dir=str(raw_dir),
+        processed_dir=str(processed_dir),
+        seq_len=6,
+        img_size=32,
+        clips_per_video=2,
+        no_face_detect=True,
+        force=True,
+    )
+
+    mtimes_after = {p: p.stat().st_mtime for p in clip_files}
+    for p in clip_files:
+        assert mtimes_after[p] > mtimes_before[p], "Clip file should be updated with force=True"
+
+
+def test_atomic_meta_csv_write(tmp_path):
+    """Test that meta.csv is written atomically and deterministically with no lingering tmp files."""
+    from preprocess import save_meta_csv_atomically
+    meta_path = str(tmp_path / "meta.csv")
+    rows = [
+        {"path": "clips/vid_b_clip0.npy", "label": 1, "video": "vid_b", "clip": 0, "split": "train"},
+        {"path": "clips/vid_a_clip1.npy", "label": 0, "video": "vid_a", "clip": 1, "split": "val"},
+        {"path": "clips/vid_a_clip0.npy", "label": 0, "video": "vid_a", "clip": 0, "split": "train"},
+    ]
+
+    df = save_meta_csv_atomically(rows, meta_path)
+    assert os.path.exists(meta_path)
+    assert not os.path.exists(f"{meta_path}.tmp")
+
+    # Verify sorting by video, clip
+    loaded = pd.read_csv(meta_path)
+    assert list(loaded["video"]) == ["vid_a", "vid_a", "vid_b"]
+    assert list(loaded["clip"]) == [0, 1, 0]
+
+
+def test_skipped_video_log_contents(tmp_path):
+    """Test that unreadable and too short videos are logged to skipped CSV."""
+    raw_dir = tmp_path / "raw"
+    processed_dir = tmp_path / "processed"
+    skipped_csv = tmp_path / "outputs" / "preprocess_skipped.csv"
+
+    # 1. Valid video
+    _make_dummy_video(str(raw_dir / "Celeb-real" / "id0_0000.mp4"), num_frames=12)
+
+    # 2. Too short video (3 frames when seq_len=6)
+    _make_dummy_video(str(raw_dir / "Celeb-real" / "id1_short.mp4"), num_frames=3)
+
+    # 3. Unreadable corrupt video
+    corrupt_path = raw_dir / "Celeb-synthesis" / "corrupt_vid.mp4"
+    os.makedirs(corrupt_path.parent, exist_ok=True)
+    corrupt_path.write_bytes(b"NOT_A_VALID_VIDEO_FILE_CONTENT")
+
+    run_preprocessing(
+        raw_dir=str(raw_dir),
+        processed_dir=str(processed_dir),
+        skipped_log_path=str(skipped_csv),
+        seq_len=6,
+        img_size=32,
+        clips_per_video=2,
+        no_face_detect=True,
+    )
+
+    assert skipped_csv.exists()
+    skipped_df = pd.read_csv(str(skipped_csv))
+    assert len(skipped_df) == 2
+    reasons = set(skipped_df["reason"].unique())
+    assert "too short" in reasons
+    assert "unreadable" in reasons
+
+
+def test_identical_output_for_workers(tmp_path):
+    """Test that workers=1 and workers=2 produce identical splits, clips, and meta.csv ordering."""
+    raw_dir = tmp_path / "raw"
+    out_w1 = tmp_path / "processed_w1"
+    out_w2 = tmp_path / "processed_w2"
+
+    _make_dummy_video(str(raw_dir / "Celeb-real" / "id0_0000.mp4"), num_frames=12)
+    _make_dummy_video(str(raw_dir / "Celeb-real" / "id1_0000.mp4"), num_frames=12)
+    _make_dummy_video(str(raw_dir / "Celeb-synthesis" / "id0_id1_0000.mp4"), num_frames=12)
+    _make_dummy_video(str(raw_dir / "Celeb-synthesis" / "id1_id2_0000.mp4"), num_frames=12)
+
+    meta_w1 = run_preprocessing(
+        raw_dir=str(raw_dir),
+        processed_dir=str(out_w1),
+        seq_len=6,
+        img_size=32,
+        clips_per_video=2,
+        workers=1,
+        no_face_detect=True,
+        seed=42,
+    )
+
+    meta_w2 = run_preprocessing(
+        raw_dir=str(raw_dir),
+        processed_dir=str(out_w2),
+        seq_len=6,
+        img_size=32,
+        clips_per_video=2,
+        workers=2,
+        no_face_detect=True,
+        seed=42,
+    )
+
+    # 1. Exact DataFrame equality (same rows, columns, split assignments, order)
+    pd.testing.assert_frame_equal(meta_w1, meta_w2)
+
+    # 2. Exact clip array equality for all clips
+    for _, row in meta_w1.iterrows():
+        p1 = out_w1 / row["path"]
+        p2 = out_w2 / row["path"]
+        arr1 = np.load(str(p1))
+        arr2 = np.load(str(p2))
+        assert np.array_equal(arr1, arr2)
+
+
+def test_run_info_fields(tmp_path):
+    """Test that save_run_info generates run_info.json containing all required experiment metadata."""
+    import json
+    from train import save_run_info
+    from config import Config
+
+    output_dir = tmp_path / "outputs"
+    meta_df = pd.DataFrame([
+        {"path": "clips/c1.npy", "label": 0, "video": "v1", "clip": 0, "split": "train"},
+        {"path": "clips/c2.npy", "label": 1, "video": "v2", "clip": 0, "split": "train"},
+        {"path": "clips/c3.npy", "label": 0, "video": "v3", "clip": 0, "split": "val"},
+        {"path": "clips/c4.npy", "label": 1, "video": "v4", "clip": 0, "split": "test"},
+    ])
+
+    cfg = Config()
+    run_info_path = save_run_info(
+        output_dir=str(output_dir),
+        meta_df=meta_df,
+        config=cfg,
+        seed=42,
+        class_weights={0: 1.0, 1: 1.5},
+        backbone="light",
+        dataset_path=str(tmp_path / "data" / "processed"),
+    )
+
+    assert os.path.exists(run_info_path)
+    with open(run_info_path, "r") as f:
+        data = json.load(f)
+
+    # Check all required fields
+    required_keys = [
+        "git_commit",
+        "git_dirty",
+        "timestamp",
+        "versions",
+        "config",
+        "seed",
+        "split_counts",
+        "class_weights",
+        "backbone",
+        "dataset_path",
+    ]
+    for key in required_keys:
+        assert key in data, f"Missing key '{key}' in run_info.json"
+
+    # Versions
+    assert "python" in data["versions"]
+    assert "tensorflow" in data["versions"]
+    assert "opencv" in data["versions"]
+
+    # Split counts
+    assert "train" in data["split_counts"]
+    assert "val" in data["split_counts"]
+    assert "test" in data["split_counts"]
+    assert data["split_counts"]["train"]["clips"]["real"] == 1
+    assert data["split_counts"]["train"]["clips"]["fake"] == 1
+    assert data["split_counts"]["test"]["videos"]["fake"] == 1
+
+
+def test_evaluate_test_counts_and_val_threshold(tmp_path):
+    """Test that evaluate records test_counts and threshold in metrics.json, and threshold is never chosen on test split."""
+    import json
+    from evaluate import evaluate
+    from model import build_model
+
+    processed_dir = tmp_path / "processed"
+    clips_dir = processed_dir / "clips"
+    output_dir = tmp_path / "outputs"
+    os.makedirs(clips_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
+
+    seq_len = 4
+    img_size = 32
+
+    # Create dummy clips
+    c_test_real = np.zeros((seq_len, img_size, img_size, 3), dtype=np.uint8)
+    c_test_fake = np.full((seq_len, img_size, img_size, 3), 200, dtype=np.uint8)
+    c_val = np.zeros((seq_len, img_size, img_size, 3), dtype=np.uint8)
+
+    np.save(str(clips_dir / "test_real.npy"), c_test_real)
+    np.save(str(clips_dir / "test_fake.npy"), c_test_fake)
+    np.save(str(clips_dir / "val_vid.npy"), c_val)
+
+    meta_df = pd.DataFrame([
+        {"path": "clips/test_real.npy", "label": 0, "video": "v_real", "clip": 0, "split": "test"},
+        {"path": "clips/test_fake.npy", "label": 1, "video": "v_fake", "clip": 0, "split": "test"},
+        {"path": "clips/val_vid.npy", "label": 0, "video": "v_val", "clip": 0, "split": "val"},
+    ])
+    meta_df.to_csv(str(processed_dir / "meta.csv"), index=False)
+
+    model = build_model(seq_len=seq_len, img_size=img_size, backbone="light", lstm_units=16, dropout=0.1)
+    model_path = str(output_dir / "test_eval_model.keras")
+    model.save(model_path)
+
+    # 1. Run evaluate with default threshold 0.5
+    res1 = evaluate(
+        model_path=model_path,
+        processed_dir=str(processed_dir),
+        output_dir=str(output_dir),
+        threshold=0.5,
+    )
+
+    metrics_file = output_dir / "metrics.json"
+    assert metrics_file.exists()
+    with open(metrics_file, "r") as f:
+        metrics_data = json.load(f)
+
+    assert "test_counts" in metrics_data
+    assert metrics_data["test_counts"]["clips"]["real"] == 1
+    assert metrics_data["test_counts"]["clips"]["fake"] == 1
+    assert metrics_data["test_counts"]["videos"]["real"] == 1
+    assert metrics_data["test_counts"]["videos"]["fake"] == 1
+    assert metrics_data["threshold"] == 0.5
+
+    # 2. Run evaluate with val_threshold (chosen on validation split, never test)
+    res2 = evaluate(
+        model_path=model_path,
+        processed_dir=str(processed_dir),
+        output_dir=str(output_dir),
+        val_threshold=True,
+    )
+    with open(metrics_file, "r") as f:
+        metrics_data_val = json.load(f)
+
+    assert metrics_data_val["threshold_source"] == "validation_split"
+    assert "test_counts" in metrics_data_val
+
+
 if __name__ == "__main__":
     unittest.main()
 

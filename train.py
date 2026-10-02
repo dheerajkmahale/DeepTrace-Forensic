@@ -9,11 +9,15 @@ Trains CNN-LSTM network using tf.data pipeline with:
 """
 
 import argparse
+from datetime import datetime, timezone
 import json
 import os
 import random
-from typing import Any, Dict, Optional
+import subprocess
+import sys
+from typing import Any, Dict, Optional, Tuple
 
+import cv2
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -23,12 +27,107 @@ from dataset import compute_class_weights, get_dataset
 from model import build_model
 
 
+def get_git_info() -> Tuple[str, bool]:
+    """Retrieve current git commit hash and dirty status."""
+    commit_hash = "unknown"
+    is_dirty = False
+    try:
+        res = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        commit_hash = res.stdout.strip()
+    except Exception:
+        pass
+
+    try:
+        res = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        is_dirty = len(res.stdout.strip()) > 0
+    except Exception:
+        pass
+
+    return commit_hash, is_dirty
+
+
+def compute_split_counts(meta_df: pd.DataFrame) -> Dict[str, Dict[str, Any]]:
+    """Compute per-split clip and video counts by class."""
+    counts = {}
+    for split_name in ["train", "val", "test"]:
+        sub = meta_df[meta_df["split"].str.lower() == split_name]
+        if len(sub) == 0:
+            counts[split_name] = {
+                "clips": {"real": 0, "fake": 0, "total": 0},
+                "videos": {"real": 0, "fake": 0, "total": 0},
+            }
+            continue
+
+        real_clips = int((sub["label"] == 0).sum())
+        fake_clips = int((sub["label"] == 1).sum())
+        total_clips = int(len(sub))
+
+        real_vids = int(sub[sub["label"] == 0]["video"].nunique())
+        fake_vids = int(sub[sub["label"] == 1]["video"].nunique())
+        total_vids = int(sub["video"].nunique())
+
+        counts[split_name] = {
+            "clips": {"real": real_clips, "fake": fake_clips, "total": total_clips},
+            "videos": {"real": real_vids, "fake": fake_vids, "total": total_vids},
+        }
+    return counts
+
+
+def save_run_info(
+    output_dir: str,
+    meta_df: pd.DataFrame,
+    config: Config,
+    seed: int,
+    class_weights: Dict[int, float],
+    backbone: str,
+    dataset_path: str,
+) -> str:
+    """Save comprehensive experiment run information to run_info.json."""
+    os.makedirs(output_dir, exist_ok=True)
+    commit_hash, is_dirty = get_git_info()
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    run_info = {
+        "git_commit": commit_hash,
+        "git_dirty": is_dirty,
+        "timestamp": timestamp,
+        "versions": {
+            "python": sys.version.split()[0],
+            "tensorflow": tf.__version__,
+            "opencv": cv2.__version__,
+        },
+        "config": config.to_dict(),
+        "seed": seed,
+        "split_counts": compute_split_counts(meta_df),
+        "class_weights": {str(k): float(v) for k, v in class_weights.items()},
+        "backbone": backbone,
+        "dataset_path": dataset_path,
+    }
+
+    run_info_path = os.path.join(output_dir, "run_info.json")
+    with open(run_info_path, "w") as f:
+        json.dump(run_info, f, indent=2)
+
+    return run_info_path
+
+
 def set_seed(seed: int = 42) -> None:
     """Set random seed for reproducibility."""
     random.seed(seed)
     np.random.seed(seed)
     tf.random.set_seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
+
 
 
 def train_model(
@@ -94,6 +193,32 @@ def train_model(
     # Compute dynamic balanced class weights from training labels
     class_weight_dict = compute_class_weights(train_df["label"].values)
     print(f"Computed training class weights: {class_weight_dict}")
+
+    # Save outputs/run_info.json
+    cfg = Config(
+        seq_len=seq_len,
+        img_size=img_size,
+        backbone=backbone,
+        pretrained=pretrained,
+        epochs=epochs,
+        batch_size=batch_size,
+        lr=lr,
+        lstm_units=lstm_units,
+        dropout=dropout,
+        seed=seed,
+        processed_dir=processed_dir,
+        output_dir=output_dir,
+    )
+    run_info_path = save_run_info(
+        output_dir=output_dir,
+        meta_df=meta_df,
+        config=cfg,
+        seed=seed,
+        class_weights=class_weight_dict,
+        backbone=backbone,
+        dataset_path=processed_dir,
+    )
+    print(f"Saved run metadata to: {run_info_path}")
 
     # Build datasets
     train_ds, n_train = get_dataset(
@@ -222,6 +347,7 @@ def train_model(
         "best_model_path": best_model_path,
         "history_path": history_path,
         "train_config_path": train_config_path,
+        "run_info_path": run_info_path,
         "history": clean_history,
     }
 

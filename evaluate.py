@@ -151,11 +151,74 @@ def plot_roc_curves(
     plt.close(fig)
 
 
+def find_optimal_validation_threshold(
+    model: tf.keras.Model,
+    meta_df: pd.DataFrame,
+    processed_dir: str,
+    batch_size: int = 8,
+) -> float:
+    """Find decision threshold that maximizes F1 score on validation split.
+
+    Crucially, this searches ONLY on the validation split, never on the test split.
+    """
+    val_df = meta_df[meta_df["split"].str.lower() == "val"].copy().reset_index(drop=True)
+    if len(val_df) == 0:
+        print("[WARNING] No validation samples found in meta.csv. Using default threshold 0.5.")
+        return 0.5
+
+    clip_probs: List[float] = []
+    loaded_clips: List[np.ndarray] = []
+
+    for _, row in val_df.iterrows():
+        clip_file = resolve_clip_path(str(row["path"]), processed_dir)
+        try:
+            clip = np.load(clip_file)
+        except Exception as e:
+            raise RuntimeError(f"Could not load val clip from {clip_file}: {e}")
+        loaded_clips.append(clip)
+
+        if len(loaded_clips) == batch_size:
+            batch_arr = np.array(loaded_clips, dtype=np.uint8)
+            preds = model.predict(batch_arr, verbose=0).flatten()
+            clip_probs.extend(preds.tolist())
+            loaded_clips = []
+
+    if loaded_clips:
+        batch_arr = np.array(loaded_clips, dtype=np.uint8)
+        preds = model.predict(batch_arr, verbose=0).flatten()
+        clip_probs.extend(preds.tolist())
+
+    val_df["predicted_probability"] = clip_probs
+    val_vids = []
+    for vid_name, grp in val_df.groupby("video"):
+        val_vids.append({
+            "video": vid_name,
+            "true_label": int(grp["label"].iloc[0]),
+            "predicted_probability": float(grp["predicted_probability"].mean()),
+        })
+    val_vid_df = pd.DataFrame(val_vids)
+    y_true = val_vid_df["true_label"].values
+    y_scores = val_vid_df["predicted_probability"].values
+
+    best_th = 0.5
+    best_f1 = -1.0
+    for th in np.linspace(0.1, 0.9, 81):
+        preds = (y_scores >= th).astype(int)
+        f1 = float(f1_score(y_true, preds, zero_division=0))
+        if f1 > best_f1:
+            best_f1 = f1
+            best_th = float(th)
+
+    print(f"[INFO] Tuned threshold on validation split: {best_th:.4f} (Val Video F1: {best_f1:.4f})")
+    return best_th
+
+
 def evaluate(
     model_path: str = "outputs/best_model.keras",
     processed_dir: str = "data/processed",
     output_dir: str = "outputs",
-    threshold: float = 0.5,
+    threshold: Optional[float] = 0.5,
+    val_threshold: bool = False,
     batch_size: int = 8,
 ) -> Dict[str, Any]:
     """Evaluate trained model on the held-out test split.
@@ -164,7 +227,8 @@ def evaluate(
         model_path: Path to saved Keras model file.
         processed_dir: Directory containing meta.csv and preprocessed clips.
         output_dir: Directory where evaluation artifacts will be written.
-        threshold: Classification decision threshold.
+        threshold: Classification decision threshold (default: 0.5).
+        val_threshold: If True, tunes decision threshold on validation split.
         batch_size: Batch size for model inference.
 
     Returns:
@@ -188,7 +252,23 @@ def evaluate(
     print(f"Loading model from: {model_path}")
     model = tf.keras.models.load_model(model_path)
 
-    # Load clips and run inference
+    # Determine decision threshold: either 0.5 (or specified) or tuned on validation split
+    if val_threshold:
+        chosen_threshold = find_optimal_validation_threshold(
+            model=model,
+            meta_df=meta_df,
+            processed_dir=processed_dir,
+            batch_size=batch_size,
+        )
+        threshold_source = "validation_split"
+    elif threshold is not None:
+        chosen_threshold = float(threshold)
+        threshold_source = "fixed_0.5" if chosen_threshold == 0.5 else "fixed_specified"
+    else:
+        chosen_threshold = 0.5
+        threshold_source = "fixed_0.5"
+
+    # Load clips and run inference on test set
     clip_probs: List[float] = []
     loaded_clips: List[np.ndarray] = []
 
@@ -212,7 +292,7 @@ def evaluate(
         clip_probs.extend(preds.tolist())
 
     clip_probs = np.array(clip_probs, dtype=float)
-    clip_preds = (clip_probs >= threshold).astype(int)
+    clip_preds = (clip_probs >= chosen_threshold).astype(int)
     clip_trues = test_df["label"].values.astype(int)
 
     test_df["predicted_probability"] = clip_probs
@@ -223,7 +303,7 @@ def evaluate(
     for video_name, group in test_df.groupby("video"):
         mean_prob = float(group["predicted_probability"].mean())
         true_label = int(group["label"].iloc[0])
-        pred_label = int(mean_prob >= threshold)
+        pred_label = int(mean_prob >= chosen_threshold)
         video_records.append({
             "video": video_name,
             "true_label": true_label,
@@ -235,18 +315,36 @@ def evaluate(
     video_df = pd.DataFrame(video_records)
 
     # Compute distinct metrics
-    clip_metrics = compute_metrics(clip_trues, clip_probs, threshold=threshold)
+    clip_metrics = compute_metrics(clip_trues, clip_probs, threshold=chosen_threshold)
     video_metrics = compute_metrics(
         video_df["true_label"].values,
         video_df["predicted_probability"].values,
-        threshold=threshold,
+        threshold=chosen_threshold,
     )
+
+    real_test_clips = int((test_df["label"] == 0).sum())
+    fake_test_clips = int((test_df["label"] == 1).sum())
+    real_test_vids = int(video_df[video_df["true_label"] == 0]["video"].nunique())
+    fake_test_vids = int(video_df[video_df["true_label"] == 1]["video"].nunique())
 
     results = {
         "clip_level": clip_metrics,
         "video_level": video_metrics,
-        "threshold": float(threshold),
+        "threshold": float(chosen_threshold),
+        "threshold_source": threshold_source,
         "model_path": model_path,
+        "test_counts": {
+            "clips": {
+                "real": real_test_clips,
+                "fake": fake_test_clips,
+                "total": int(len(test_df)),
+            },
+            "videos": {
+                "real": real_test_vids,
+                "fake": fake_test_vids,
+                "total": int(len(video_df)),
+            },
+        },
         "test_clips_count": int(len(test_df)),
         "test_videos_count": int(len(video_df)),
     }
@@ -260,7 +358,7 @@ def evaluate(
     # Merge video mean probability for completeness
     video_mean_map = dict(zip(video_df["video"], video_df["predicted_probability"]))
     test_df["video_mean_probability"] = test_df["video"].map(video_mean_map)
-    test_df["video_predicted_label"] = (test_df["video_mean_probability"] >= threshold).astype(int)
+    test_df["video_predicted_label"] = (test_df["video_mean_probability"] >= chosen_threshold).astype(int)
 
     export_df = test_df[[
         "video",
@@ -299,8 +397,10 @@ def evaluate(
     print("\n" + "=" * 55)
     print("HELD-OUT TEST SET EVALUATION RESULTS")
     print("=" * 55)
-    print(f"Classification threshold: {threshold}")
-    print(f"Clip-Level Metrics ({clip_metrics['total_samples']} clips):")
+    print(f"Classification threshold: {chosen_threshold:.4f} (Source: {threshold_source})")
+    print(f"Test counts - Real clips: {real_test_clips} | Fake clips: {fake_test_clips}")
+    print(f"Test counts - Real videos: {real_test_vids} | Fake videos: {fake_test_vids}")
+    print(f"\nClip-Level Metrics ({clip_metrics['total_samples']} clips):")
     print(f"  Accuracy:  {clip_metrics['accuracy']:.4f}")
     print(f"  Precision: {clip_metrics['precision']:.4f}")
     print(f"  Recall:    {clip_metrics['recall']:.4f}")
@@ -331,7 +431,12 @@ def main():
     parser.add_argument("--model-path", type=str, default="outputs/best_model.keras", help="Path to model.")
     parser.add_argument("--processed-dir", type=str, default="data/processed", help="Path to processed data.")
     parser.add_argument("--output-dir", type=str, default="outputs", help="Directory for output files.")
-    parser.add_argument("--threshold", type=float, default=0.5, help="Classification decision threshold.")
+    parser.add_argument("--threshold", type=float, default=0.5, help="Classification decision threshold (default: 0.5).")
+    parser.add_argument(
+        "--val-threshold",
+        action="store_true",
+        help="Tune decision threshold on validation split instead of fixed threshold.",
+    )
     parser.add_argument("--batch-size", type=int, default=8, help="Batch size for inference.")
 
     args = parser.parse_args()
@@ -341,6 +446,7 @@ def main():
         processed_dir=args.processed_dir,
         output_dir=args.output_dir,
         threshold=args.threshold,
+        val_threshold=args.val_threshold,
         batch_size=args.batch_size,
     )
 

@@ -21,6 +21,8 @@ Pipeline:
    - Crops face with face_margin, resizes to img_size x img_size, converts to RGB.
    - Stores clip as uint8 NumPy array of shape (seq_len, img_size, img_size, 3).
 4. Saves processed clips and generates meta.csv (path, label, video, clip, split).
+5. Provides resumable preprocessing, atomic metadata writes, skip logging,
+   and multiprocessing support (--workers N).
 
 Note:
 --no-face-detect performs center cropping and is strictly intended for synthetic
@@ -28,9 +30,11 @@ demo data where human faces are not present. It is NOT for real Celeb-DF data.
 """
 
 import argparse
+import multiprocessing
 import os
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+import time
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import cv2
 import numpy as np
@@ -46,6 +50,52 @@ def get_face_cascade() -> cv2.CascadeClassifier:
     if cascade.empty():
         raise RuntimeError(f"Failed to load Haar cascade from {cascade_path}")
     return cascade
+
+
+def is_clip_readable(clip_path: str, seq_len: int, img_size: int) -> bool:
+    """Check if an existing clip .npy file is readable and matches expected dimensions."""
+    if not os.path.exists(clip_path):
+        return False
+    try:
+        arr = np.load(clip_path)
+        if arr.shape != (seq_len, img_size, img_size, 3):
+            return False
+        if arr.dtype != np.uint8:
+            return False
+        return True
+    except Exception:
+        return False
+
+
+def save_meta_csv_atomically(meta_rows: List[Dict], meta_path: str) -> pd.DataFrame:
+    """Save metadata rows to meta.csv atomically and deterministically.
+
+    Sorts by video and clip to ensure identical output regardless of worker execution order.
+    Writes to a temporary file before atomic renaming.
+    """
+    os.makedirs(os.path.dirname(os.path.abspath(meta_path)), exist_ok=True)
+    meta_df = pd.DataFrame(meta_rows, columns=["path", "label", "video", "clip", "split"])
+    if len(meta_df) > 0:
+        meta_df = meta_df.sort_values(by=["video", "clip"]).reset_index(drop=True)
+    temp_path = f"{meta_path}.tmp"
+    meta_df.to_csv(temp_path, index=False)
+    os.replace(temp_path, meta_path)
+    return meta_df
+
+
+def save_skipped_csv_atomically(skipped_rows: List[Dict], skipped_path: str) -> pd.DataFrame:
+    """Save skipped video records to CSV atomically.
+
+    Writes to a temporary file before atomic renaming.
+    """
+    os.makedirs(os.path.dirname(os.path.abspath(skipped_path)), exist_ok=True)
+    skipped_df = pd.DataFrame(skipped_rows, columns=["video_path", "label", "reason"])
+    if len(skipped_df) > 0:
+        skipped_df = skipped_df.sort_values(by=["video_path"]).reset_index(drop=True)
+    temp_path = f"{skipped_path}.tmp"
+    skipped_df.to_csv(temp_path, index=False)
+    os.replace(temp_path, skipped_path)
+    return skipped_df
 
 
 def discover_videos(search_dir: str) -> List[str]:
@@ -84,14 +134,12 @@ def classify_video_folder(rel_path: str) -> Optional[Tuple[str, int]]:
     if not parts:
         return None
 
-    # Inspect directory components excluding the video filename
     video_exts = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
     if any(parts[-1].endswith(ext) for ext in video_exts):
         dir_parts = parts[:-1]
     else:
         dir_parts = parts
 
-    # Priority matching for Celeb-DF v2 standard folders
     if any(p == "celeb-synthesis" for p in dir_parts):
         return ("Celeb-synthesis", 1)
     if any(p in ("youtube-real", "youtubereal") for p in dir_parts):
@@ -209,14 +257,12 @@ def parse_celebdf_test_list(
 
             folder_category, folder_label = cls
 
-            # Convert numeric column using the official list assumption
             try:
                 converted_project_label = convert_official_list_label_to_project_label(num_label)
             except ValueError as e:
                 mismatches.append(f"Line {line_num}: '{line_str}' -> {e}")
                 continue
 
-            # Cross-check converted numeric label against folder-derived label
             if converted_project_label != folder_label:
                 mismatches.append(
                     f"Line {line_num}: '{line_str}' -> official list label is {num_label} "
@@ -248,7 +294,6 @@ def match_test_list_to_disk(
     Raises:
         FileNotFoundError: If any test list entry has no matching video file on disk.
     """
-    # Build disk lookup: (folder_category.lower(), filename.lower()) -> video_id
     disk_lookup: Dict[Tuple[str, str], str] = {}
     for vid_id, folder_cat, lbl, abs_path in video_records:
         key = (folder_cat.lower(), os.path.basename(abs_path).lower())
@@ -478,21 +523,30 @@ def extract_clips_from_video(
     face_margin: float = 0.25,
     no_face_detect: bool = False,
     face_cascade: Optional[cv2.CascadeClassifier] = None,
-) -> List[np.ndarray]:
-    """Extract processed clips from a video file."""
+    return_reason: bool = False,
+) -> Any:
+    """Extract processed clips from a video file.
+
+    Returns:
+        If return_reason is False: List[np.ndarray] of valid clips.
+        If return_reason is True: Tuple[List[np.ndarray], Optional[str]] where
+        reason is one of "unreadable", "too short", "no face detected", or None.
+    """
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        return []
+        return ([], "unreadable") if return_reason else []
 
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     if total_frames < seq_len:
         cap.release()
-        return []
+        return ([], "too short") if return_reason else []
 
     if not no_face_detect and face_cascade is None:
         face_cascade = get_face_cascade()
 
     valid_clips: List[np.ndarray] = []
+    any_frame_read = False
+    any_face_detected = False
 
     for c in range(clips_per_video):
         seg_start = int(c * total_frames / clips_per_video)
@@ -508,6 +562,7 @@ def extract_clips_from_video(
             ret, frame = cap.read()
             if not ret or frame is None:
                 break
+            any_frame_read = True
             raw_frames.append(frame)
 
         if len(raw_frames) != seq_len:
@@ -534,6 +589,7 @@ def extract_clips_from_video(
                 if len(detected) > 0:
                     largest = max(detected, key=lambda b: b[2] * b[3])
                     bboxes.append(tuple(largest))
+                    any_face_detected = True
                 else:
                     bboxes.append(None)
 
@@ -558,7 +614,128 @@ def extract_clips_from_video(
             valid_clips.append(clip_array)
 
     cap.release()
+
+    if return_reason:
+        if len(valid_clips) > 0:
+            return valid_clips, None
+        if not any_frame_read:
+            return [], "unreadable"
+        if not no_face_detect and not any_face_detected:
+            return [], "no face detected"
+        return [], "too short"
+
     return valid_clips
+
+
+def process_single_video(task: Tuple) -> Dict[str, Any]:
+    """Top-level worker function to process a single video.
+
+    Compatible with multiprocessing spawn on Windows.
+    Handles resume check, clip extraction, atomic clip saving, and skip tracking.
+    """
+    (
+        video_id,
+        folder_cat,
+        label,
+        video_path,
+        video_split,
+        clips_output_dir,
+        seq_len,
+        img_size,
+        clips_per_video,
+        face_margin,
+        no_face_detect,
+        force,
+    ) = task
+
+    safe_stem = video_id.replace("/", "_").replace("\\", "_")
+    safe_stem = Path(safe_stem).stem
+
+    # Check if clips already exist and are readable (resumable)
+    if not force:
+        existing_clips = []
+        for clip_idx in range(clips_per_video):
+            clip_filename = f"{safe_stem}_clip{clip_idx}.npy"
+            clip_path = os.path.join(clips_output_dir, clip_filename)
+            if is_clip_readable(clip_path, seq_len, img_size):
+                existing_clips.append((clip_idx, clip_filename))
+
+        if len(existing_clips) > 0:
+            meta_rows = []
+            for clip_idx, clip_filename in existing_clips:
+                rel_path = os.path.join("clips", clip_filename).replace("\\", "/")
+                meta_rows.append({
+                    "path": rel_path,
+                    "label": int(label),
+                    "video": video_id,
+                    "clip": clip_idx,
+                    "split": video_split,
+                })
+            return {
+                "video_id": video_id,
+                "video_path": video_path,
+                "label": int(label),
+                "split": video_split,
+                "meta_rows": meta_rows,
+                "skipped": False,
+                "reason": None,
+                "resumed": True,
+            }
+
+    # Extract clips from scratch
+    face_cascade = None if no_face_detect else get_face_cascade()
+    clips, reason = extract_clips_from_video(
+        video_path=video_path,
+        seq_len=seq_len,
+        img_size=img_size,
+        clips_per_video=clips_per_video,
+        face_margin=face_margin,
+        no_face_detect=no_face_detect,
+        face_cascade=face_cascade,
+        return_reason=True,
+    )
+
+    if len(clips) == 0:
+        return {
+            "video_id": video_id,
+            "video_path": video_path,
+            "label": int(label),
+            "split": video_split,
+            "meta_rows": [],
+            "skipped": True,
+            "reason": reason or "unreadable",
+            "resumed": False,
+        }
+
+    meta_rows = []
+    for clip_idx, clip_data in enumerate(clips):
+        clip_filename = f"{safe_stem}_clip{clip_idx}.npy"
+        clip_path = os.path.join(clips_output_dir, clip_filename)
+
+        # Atomic clip write: save to .tmp.npy then rename to .npy
+        tmp_clip_path = os.path.join(clips_output_dir, f"{safe_stem}_clip{clip_idx}.tmp.npy")
+        np.save(tmp_clip_path, clip_data)
+        os.replace(tmp_clip_path, clip_path)
+
+        rel_path = os.path.join("clips", clip_filename).replace("\\", "/")
+        meta_rows.append({
+            "path": rel_path,
+            "label": int(label),
+            "video": video_id,
+            "clip": clip_idx,
+            "split": video_split,
+        })
+
+    return {
+        "video_id": video_id,
+        "video_path": video_path,
+        "label": int(label),
+        "split": video_split,
+        "meta_rows": meta_rows,
+        "skipped": False,
+        "reason": None,
+        "resumed": False,
+    }
 
 
 def run_preprocessing(
@@ -576,20 +753,17 @@ def run_preprocessing(
     seed: int = 42,
     no_face_detect: bool = False,
     max_videos: Optional[int] = None,
+    force: bool = False,
+    workers: int = 1,
+    skipped_log_path: str = "outputs/preprocess_skipped.csv",
 ) -> pd.DataFrame:
-    """Run full preprocessing pipeline.
-
-    Supports nested directories and optional official Celeb-DF test list.
-    """
+    """Run full preprocessing pipeline with resume capability, atomic writes, and multiprocessing."""
     if no_face_detect:
         print("[WARNING] --no-face-detect enabled: using center crop instead of face detection.")
         print("          This option is ONLY intended for synthetic demonstration data.")
         print("          Do NOT use --no-face-detect for real Celeb-DF preprocessing.")
 
-    # Discover videos recursively using os.walk
-    # If explicit real_dir and fake_dir are provided, discover in them
-    # Otherwise discover all videos across raw_dir (which may live outside OneDrive, e.g. D:\datasets\Celeb-DF-v2)
-    video_records: List[Tuple[str, str, int, str]] = []  # (video_id, folder_category, label, full_path)
+    video_records: List[Tuple[str, str, int, str]] = []
 
     custom_dirs_provided = (real_dir is not None and fake_dir is not None)
 
@@ -613,6 +787,9 @@ def run_preprocessing(
                 cat, lbl = cls
                 video_records.append((rel_to_raw, cat, lbl, p))
 
+    # Sort video records to ensure deterministic processing and splitting
+    video_records.sort(key=lambda x: x[0])
+
     if max_videos and len(video_records) > max_videos:
         video_records = video_records[:max_videos]
 
@@ -621,11 +798,13 @@ def run_preprocessing(
     fake_count = sum(1 for _, _, lbl, _ in video_records if lbl == 1)
     print(f"Discovered {real_count} real videos and {fake_count} fake videos (Total: {total_video_count}).")
 
+    meta_path = os.path.join(processed_dir, "meta.csv")
+
     if total_video_count == 0:
         print(f"[WARNING] No raw videos found in '{raw_dir}'.")
         os.makedirs(processed_dir, exist_ok=True)
-        meta_df = pd.DataFrame(columns=["path", "label", "video", "clip", "split"])
-        meta_df.to_csv(os.path.join(processed_dir, "meta.csv"), index=False)
+        meta_df = save_meta_csv_atomically([], meta_path)
+        save_skipped_csv_atomically([], skipped_log_path)
         return meta_df
 
     # Check for official Celeb-DF test list
@@ -636,7 +815,6 @@ def run_preprocessing(
         parsed_test_entries = parse_celebdf_test_list(test_list_candidate)
         print(f"       Parsed {len(parsed_test_entries)} entries from official test list.")
 
-        # Match entries to files on disk by folder + filename (fails loudly if any missing)
         video_to_split = match_test_list_to_disk(
             test_entries=parsed_test_entries,
             video_records=video_records,
@@ -644,10 +822,10 @@ def run_preprocessing(
         )
         print(f"       Assigned {len(video_to_split)} videos to held-out test split via official list.")
 
-        # Split remaining videos into train and val (PER VIDEO, stratified, seeded; test_fraction is NOT used)
         remaining_records = [
             (vid_id, lbl) for vid_id, _, lbl, _ in video_records if vid_id not in video_to_split
         ]
+        remaining_records.sort(key=lambda x: x[0])
         train_val_split = split_remaining_train_val(
             remaining_records=remaining_records,
             val_fraction=val_fraction,
@@ -657,8 +835,8 @@ def run_preprocessing(
     else:
         print("\n[INFO] Official Celeb-DF testing-video list not provided locally.")
         print("       Using per-video stratified random splitting.")
-        print("       Note: Random video-level split is not equivalent to the official Celeb-DF test benchmark protocol.")
         split_records = [(vid_id, lbl) for vid_id, _, lbl, _ in video_records]
+        split_records.sort(key=lambda x: x[0])
         video_to_split = split_videos_stratified(
             video_records=split_records,
             val_fraction=val_fraction,
@@ -669,48 +847,93 @@ def run_preprocessing(
     clips_output_dir = os.path.join(processed_dir, "clips")
     os.makedirs(clips_output_dir, exist_ok=True)
 
-    face_cascade = None if no_face_detect else get_face_cascade()
-    meta_rows: List[Dict] = []
-
+    # Build tasks for processing
+    tasks = []
     for video_id, folder_cat, label, video_path in video_records:
         video_split = video_to_split.get(video_id, "train")
-
-        clips = extract_clips_from_video(
-            video_path=video_path,
-            seq_len=seq_len,
-            img_size=img_size,
-            clips_per_video=clips_per_video,
-            face_margin=face_margin,
-            no_face_detect=no_face_detect,
-            face_cascade=face_cascade,
+        task = (
+            video_id,
+            folder_cat,
+            label,
+            video_path,
+            video_split,
+            clips_output_dir,
+            seq_len,
+            img_size,
+            clips_per_video,
+            face_margin,
+            no_face_detect,
+            force,
         )
+        tasks.append(task)
 
-        # Create collision-free safe stem from relative video_id
-        safe_stem = video_id.replace("/", "_").replace("\\", "_")
-        safe_stem = Path(safe_stem).stem
+    all_meta_rows: List[Dict] = []
+    skipped_records: List[Dict] = []
+    resumed_count = 0
 
-        for clip_idx, clip_data in enumerate(clips):
-            clip_filename = f"{safe_stem}_clip{clip_idx}.npy"
-            clip_path = os.path.join(clips_output_dir, clip_filename)
-            np.save(clip_path, clip_data)
+    print(f"\nStarting video preprocessing (workers={workers}, force={force})...")
+    start_time = time.time()
 
-            rel_path = os.path.join("clips", clip_filename).replace("\\", "/")
-            meta_rows.append({
-                "path": rel_path,
-                "label": int(label),
-                "video": video_id,
-                "clip": clip_idx,
-                "split": video_split,
+    def handle_result(idx: int, res: Dict[str, Any]):
+        nonlocal resumed_count
+        if res["skipped"]:
+            skipped_records.append({
+                "video_path": res["video_path"],
+                "label": res["label"],
+                "reason": res["reason"],
             })
+        else:
+            all_meta_rows.extend(res["meta_rows"])
+            if res.get("resumed"):
+                resumed_count += 1
 
-    meta_df = pd.DataFrame(meta_rows, columns=["path", "label", "video", "clip", "split"])
-    meta_path = os.path.join(processed_dir, "meta.csv")
-    meta_df.to_csv(meta_path, index=False)
+        if idx % 25 == 0 or idx == total_video_count:
+            elapsed = time.time() - start_time
+            rate = idx / elapsed if elapsed > 0 else 0.0
+            remaining = total_video_count - idx
+            eta = remaining / rate if rate > 0 else 0.0
+            elapsed_str = time.strftime("%H:%M:%S", time.gmtime(elapsed))
+            eta_str = time.strftime("%H:%M:%S", time.gmtime(eta))
+            print(
+                f"[{idx:>{len(str(total_video_count))}}/{total_video_count}] "
+                f"Elapsed: {elapsed_str} | ETA: {eta_str} ({rate:.1f} vids/s) | "
+                f"Clips: {len(all_meta_rows)} | Skipped: {len(skipped_records)}"
+            )
+            save_meta_csv_atomically(all_meta_rows, meta_path)
+            save_skipped_csv_atomically(skipped_records, skipped_log_path)
+
+    if workers > 1:
+        with multiprocessing.Pool(processes=workers) as pool:
+            for idx, res in enumerate(pool.imap(process_single_video, tasks), start=1):
+                handle_result(idx, res)
+    else:
+        for idx, task in enumerate(tasks, start=1):
+            res = process_single_video(task)
+            handle_result(idx, res)
+
+    # Final safe writes
+    meta_df = save_meta_csv_atomically(all_meta_rows, meta_path)
+    save_skipped_csv_atomically(skipped_records, skipped_log_path)
+
+    print("\n" + "=" * 55)
+    print("SKIPPED / FAILED VIDEOS SUMMARY")
+    print("=" * 55)
+    print(f"Total skipped/failed videos: {len(skipped_records)}")
+    reasons_count: Dict[str, int] = {}
+    for r in skipped_records:
+        reasons_count[r["reason"]] = reasons_count.get(r["reason"], 0) + 1
+    for reason, count in sorted(reasons_count.items()):
+        print(f"  - {reason}: {count}")
+    if len(reasons_count) == 0:
+        print("  (None - all videos processed successfully)")
+    print(f"Skipped log written to:      {skipped_log_path}")
+    print("=" * 55)
 
     print("\n" + "=" * 55)
     print("PREPROCESSING & SPLIT STATISTICS")
     print("=" * 55)
     print(f"Total videos processed: {total_video_count}")
+    print(f"Videos resumed:         {resumed_count}")
     print(f"Total clips saved:      {len(meta_df)}")
     if len(meta_df) > 0:
         real_clips = (meta_df["label"] == 0).sum()
@@ -757,6 +980,23 @@ def main():
         action="store_true",
         help="Use center cropping instead of face detection. ONLY for synthetic demo data.",
     )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force re-extraction of all clips even if valid clips already exist.",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help="Number of worker processes for parallel clip extraction (default: 1).",
+    )
+    parser.add_argument(
+        "--skipped-log",
+        type=str,
+        default="outputs/preprocess_skipped.csv",
+        help="Path to save CSV log of skipped or failed videos.",
+    )
 
     args = parser.parse_args()
 
@@ -775,6 +1015,9 @@ def main():
         seed=args.seed,
         no_face_detect=args.no_face_detect,
         max_videos=args.max_videos,
+        force=args.force,
+        workers=args.workers,
+        skipped_log_path=args.skipped_log,
     )
 
 
