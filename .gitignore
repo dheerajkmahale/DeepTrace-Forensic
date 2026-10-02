@@ -1,0 +1,38 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Testing & cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Model checkpoints and weights
+*.keras
+*.h5
+*.hdf5
+
+# Outputs
+outputs/
+
+# Data directories (ignore raw video files, processed and demo data, but keep .gitkeep)
+data/processed/
+data/demo/
+data/raw/real/*
+!data/raw/real/.gitkeep
+data/raw/fake/*
+!data/raw/fake/.gitkeep
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
