@@ -8,12 +8,54 @@ an aggregated video-level verdict (REAL or FAKE) using a fixed threshold.
 import argparse
 import os
 import sys
-from typing import Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import tensorflow as tf
 
 from preprocess import extract_clips_from_video, get_face_cascade
+
+
+class PredictionResult:
+    """Structured container for single-video deepfake prediction results."""
+
+    def __init__(
+        self,
+        verdict: str,
+        fake_probability: float,
+        real_probability: float,
+        clips_analyzed: int,
+        clip_probabilities: List[float],
+    ):
+        self.verdict = verdict
+        self.fake_probability = fake_probability
+        self.real_probability = real_probability
+        self.clips_analyzed = clips_analyzed
+        self.clip_probabilities = clip_probabilities
+
+    def __iter__(self):
+        # Enables backward-compatible unpacking: (num_clips, p_fake, verdict)
+        return iter((self.clips_analyzed, self.fake_probability, self.verdict))
+
+    def __getitem__(self, idx):
+        return (self.clips_analyzed, self.fake_probability, self.verdict)[idx]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "verdict": self.verdict,
+            "fake_probability": self.fake_probability,
+            "real_probability": self.real_probability,
+            "clips_analyzed": self.clips_analyzed,
+            "clip_probabilities": self.clip_probabilities,
+        }
+
+    def __repr__(self) -> str:
+        return (
+            f"PredictionResult(verdict='{self.verdict}', "
+            f"fake_prob={self.fake_probability:.4f}, "
+            f"real_prob={self.real_probability:.4f}, "
+            f"clips_analyzed={self.clips_analyzed})"
+        )
 
 
 def predict_video(
@@ -25,7 +67,7 @@ def predict_video(
     clips_per_video: int = 3,
     face_margin: float = 0.25,
     no_face_detect: bool = False,
-) -> Tuple[int, float, str]:
+) -> PredictionResult:
     """Run deepfake inference on a single video file.
 
     Args:
@@ -39,13 +81,17 @@ def predict_video(
         no_face_detect: If True, uses center crop (for synthetic demo data).
 
     Returns:
-        Tuple of (num_clips_analyzed, p_fake, verdict).
+        PredictionResult containing verdict, fake_probability, real_probability,
+        clips_analyzed, and clip_probabilities (also unpacks as (num_clips, p_fake, verdict)).
     """
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"Video file not found: {video_path}")
 
     if not os.path.exists(model_path):
-        raise FileNotFoundError(f"Model file not found: {model_path}")
+        raise FileNotFoundError(
+            f"Model file not found at '{model_path}'. "
+            "Please ensure the model has been trained or run 'python demo.py' to generate a prototype model."
+        )
 
     # Extract clips using identical preprocessing pipeline
     face_cascade = None if no_face_detect else get_face_cascade()
@@ -60,8 +106,13 @@ def predict_video(
     )
 
     if len(clips) == 0:
-        print(f"[WARNING] No valid clips could be extracted from {video_path}.")
-        return 0, 0.0, "UNKNOWN"
+        return PredictionResult(
+            verdict="UNKNOWN",
+            fake_probability=0.0,
+            real_probability=0.0,
+            clips_analyzed=0,
+            clip_probabilities=[],
+        )
 
     clips_array = np.array(clips, dtype=np.uint8)
 
@@ -70,9 +121,16 @@ def predict_video(
     predictions = model.predict(clips_array, verbose=0).flatten()
 
     p_fake = float(np.mean(predictions))
+    p_real = float(1.0 - p_fake)
     verdict = "FAKE" if p_fake >= threshold else "REAL"
 
-    return len(clips), p_fake, verdict
+    return PredictionResult(
+        verdict=verdict,
+        fake_probability=p_fake,
+        real_probability=p_real,
+        clips_analyzed=len(clips),
+        clip_probabilities=[float(p) for p in predictions],
+    )
 
 
 def main():
@@ -92,7 +150,7 @@ def main():
 
     args = parser.parse_args()
 
-    num_clips, p_fake, verdict = predict_video(
+    result = predict_video(
         video_path=args.video,
         model_path=args.model_path,
         threshold=args.threshold,
@@ -103,9 +161,9 @@ def main():
         no_face_detect=args.no_face_detect,
     )
 
-    print(f"Clips analysed: {num_clips}")
-    print(f"P(fake): {p_fake:.4f}")
-    print(f"Verdict: {verdict}")
+    print(f"Clips analysed: {result.clips_analyzed}")
+    print(f"P(fake): {result.fake_probability:.4f}")
+    print(f"Verdict: {result.verdict}")
 
 
 if __name__ == "__main__":

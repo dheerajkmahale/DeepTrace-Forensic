@@ -26,6 +26,8 @@ outputs/
 # Data directories (ignore raw video files, processed and demo data, but keep .gitkeep)
 data/processed/
 data/demo/
+data/demo/uploads/
+uploads/
 data/raw/real/*
 !data/raw/real/.gitkeep
 data/raw/fake/*
