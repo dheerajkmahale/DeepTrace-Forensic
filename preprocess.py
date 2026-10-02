@@ -30,6 +30,8 @@ demo data where human faces are not present. It is NOT for real Celeb-DF data.
 """
 
 import argparse
+import hashlib
+import json
 import multiprocessing
 import os
 from pathlib import Path
@@ -41,6 +43,59 @@ import numpy as np
 import pandas as pd
 
 from config import Config
+
+
+def get_face_detector_config(no_face_detect: bool) -> Dict[str, Any]:
+    """Return dictionary describing face detector name and detection parameters."""
+    if no_face_detect:
+        return {
+            "name": "center_crop",
+            "parameters": {},
+        }
+    return {
+        "name": "haar_cascade_frontalface_default",
+        "parameters": {
+            "scaleFactor": 1.1,
+            "minNeighbors": 4,
+            "minSize": [30, 30],
+        },
+    }
+
+
+def compute_preprocess_fingerprint(
+    seq_len: int,
+    img_size: int,
+    clips_per_video: int,
+    face_margin: float,
+    face_detector_config: Dict[str, Any],
+    seed: int,
+) -> Tuple[str, Dict[str, Any]]:
+    """Compute deterministic SHA-256 fingerprint hash of preprocessing configuration."""
+    plain_config = {
+        "seq_len": int(seq_len),
+        "img_size": int(img_size),
+        "clips_per_video": int(clips_per_video),
+        "face_margin": float(face_margin),
+        "face_detector": face_detector_config,
+        "seed": int(seed),
+    }
+    canonical_repr = json.dumps(plain_config, sort_keys=True)
+    fingerprint = hashlib.sha256(canonical_repr.encode("utf-8")).hexdigest()
+    full_config = {
+        "fingerprint": fingerprint,
+        **plain_config,
+    }
+    return fingerprint, full_config
+
+
+def save_preprocess_config_atomically(config_data: Dict[str, Any], config_path: str) -> None:
+    """Save preprocessing configuration and fingerprint to JSON atomically."""
+    os.makedirs(os.path.dirname(os.path.abspath(config_path)), exist_ok=True)
+    temp_path = f"{config_path}.tmp"
+    with open(temp_path, "w", encoding="utf-8") as f:
+        json.dump(config_data, f, indent=2)
+    os.replace(temp_path, config_path)
+
 
 
 def get_face_cascade() -> cv2.CascadeClassifier:
@@ -763,6 +818,42 @@ def run_preprocessing(
         print("          This option is ONLY intended for synthetic demonstration data.")
         print("          Do NOT use --no-face-detect for real Celeb-DF preprocessing.")
 
+    detector_config = get_face_detector_config(no_face_detect)
+    current_fingerprint, current_config = compute_preprocess_fingerprint(
+        seq_len=seq_len,
+        img_size=img_size,
+        clips_per_video=clips_per_video,
+        face_margin=face_margin,
+        face_detector_config=detector_config,
+        seed=seed,
+    )
+    config_path = os.path.join(processed_dir, "preprocess_config.json")
+
+    # On resume, if preprocess_config.json exists and not forcing, verify fingerprint matches
+    if os.path.exists(config_path) and not force:
+        try:
+            with open(config_path, "r", encoding="utf-8") as f:
+                existing_config = json.load(f)
+        except Exception:
+            existing_config = {}
+
+        existing_fingerprint = existing_config.get("fingerprint")
+        if existing_fingerprint != current_fingerprint:
+            differences = []
+            for key in ["seq_len", "img_size", "clips_per_video", "face_margin", "face_detector", "seed"]:
+                existing_val = existing_config.get(key)
+                current_val = current_config.get(key)
+                if existing_val != current_val:
+                    differences.append(f"  - {key}: existing={existing_val}, current={current_val}")
+
+            diff_str = "\n".join(differences) if differences else f"  - fingerprint mismatch: existing={existing_fingerprint}, current={current_fingerprint}"
+            raise ValueError(
+                f"Preprocessing configuration mismatch detected in '{config_path}'!\n"
+                f"The existing processed data was generated with different settings:\n"
+                f"{diff_str}\n"
+                f"Cannot resume preprocessing with conflicting configurations. To reprocess everything with the new settings, please rerun with --force."
+            )
+
     video_records: List[Tuple[str, str, int, str]] = []
 
     custom_dirs_provided = (real_dir is not None and fake_dir is not None)
@@ -803,6 +894,7 @@ def run_preprocessing(
     if total_video_count == 0:
         print(f"[WARNING] No raw videos found in '{raw_dir}'.")
         os.makedirs(processed_dir, exist_ok=True)
+        save_preprocess_config_atomically(current_config, config_path)
         meta_df = save_meta_csv_atomically([], meta_path)
         save_skipped_csv_atomically([], skipped_log_path)
         return meta_df
@@ -912,6 +1004,7 @@ def run_preprocessing(
             handle_result(idx, res)
 
     # Final safe writes
+    save_preprocess_config_atomically(current_config, config_path)
     meta_df = save_meta_csv_atomically(all_meta_rows, meta_path)
     save_skipped_csv_atomically(skipped_records, skipped_log_path)
 
@@ -945,6 +1038,7 @@ def run_preprocessing(
             vid_cnt = meta_df[meta_df["split"] == s]["video"].nunique()
             print(f"  - {s:<5}: {cnt} clips from {vid_cnt} videos")
     print(f"Metadata saved to:      {meta_path}")
+    print(f"Config saved to:        {config_path}")
     print("=" * 55 + "\n")
 
     return meta_df

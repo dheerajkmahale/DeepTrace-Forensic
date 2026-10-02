@@ -940,6 +940,133 @@ def test_evaluate_test_counts_and_val_threshold(tmp_path):
     assert "test_counts" in metrics_data_val
 
 
+def test_preprocessing_fingerprint_same_settings_resumes(tmp_path):
+    """Test that same settings generate and verify fingerprint, resuming without error."""
+    import json
+    raw_dir = tmp_path / "raw"
+    processed_dir = tmp_path / "processed"
+
+    _make_dummy_video(str(raw_dir / "Celeb-real" / "id0_0000.mp4"), num_frames=12)
+
+    run_preprocessing(
+        raw_dir=str(raw_dir),
+        processed_dir=str(processed_dir),
+        seq_len=6,
+        img_size=32,
+        clips_per_video=2,
+        face_margin=0.25,
+        seed=42,
+        no_face_detect=True,
+    )
+
+    config_file = processed_dir / "preprocess_config.json"
+    assert config_file.exists()
+    with open(config_file, "r") as f:
+        cfg1 = json.load(f)
+
+    assert "fingerprint" in cfg1
+    assert cfg1["seq_len"] == 6
+    assert cfg1["img_size"] == 32
+    assert cfg1["clips_per_video"] == 2
+    assert cfg1["face_margin"] == 0.25
+    assert cfg1["seed"] == 42
+    assert cfg1["face_detector"]["name"] == "center_crop"
+
+    # Resume with identical settings
+    meta_df = run_preprocessing(
+        raw_dir=str(raw_dir),
+        processed_dir=str(processed_dir),
+        seq_len=6,
+        img_size=32,
+        clips_per_video=2,
+        face_margin=0.25,
+        seed=42,
+        no_face_detect=True,
+        force=False,
+    )
+    assert len(meta_df) == 2
+
+
+def test_preprocessing_fingerprint_changed_setting_refused(tmp_path):
+    """Test that resuming with a changed setting is refused with a clear error listing differences."""
+    raw_dir = tmp_path / "raw"
+    processed_dir = tmp_path / "processed"
+
+    _make_dummy_video(str(raw_dir / "Celeb-real" / "id0_0000.mp4"), num_frames=16)
+
+    # Initial run with seq_len=6, img_size=32
+    run_preprocessing(
+        raw_dir=str(raw_dir),
+        processed_dir=str(processed_dir),
+        seq_len=6,
+        img_size=32,
+        clips_per_video=2,
+        face_margin=0.25,
+        seed=42,
+        no_face_detect=True,
+    )
+
+    # Attempt resume with different seq_len (8 instead of 6) and different img_size (48 instead of 32)
+    with pytest.raises(ValueError) as excinfo:
+        run_preprocessing(
+            raw_dir=str(raw_dir),
+            processed_dir=str(processed_dir),
+            seq_len=8,
+            img_size=48,
+            clips_per_video=2,
+            face_margin=0.25,
+            seed=42,
+            no_face_detect=True,
+            force=False,
+        )
+
+    err_msg = str(excinfo.value)
+    assert "Preprocessing configuration mismatch detected" in err_msg
+    assert "seq_len: existing=6, current=8" in err_msg
+    assert "img_size: existing=32, current=48" in err_msg
+    assert "--force" in err_msg
+
+
+def test_preprocessing_fingerprint_force_overwrites(tmp_path):
+    """Test that --force overwrites preprocess_config.json with new settings and fingerprint."""
+    import json
+    raw_dir = tmp_path / "raw"
+    processed_dir = tmp_path / "processed"
+
+    _make_dummy_video(str(raw_dir / "Celeb-real" / "id0_0000.mp4"), num_frames=16)
+
+    # Initial run with seq_len=6
+    run_preprocessing(
+        raw_dir=str(raw_dir),
+        processed_dir=str(processed_dir),
+        seq_len=6,
+        img_size=32,
+        clips_per_video=2,
+        no_face_detect=True,
+    )
+
+    config_file = processed_dir / "preprocess_config.json"
+    with open(config_file, "r") as f:
+        fp1 = json.load(f)["fingerprint"]
+
+    # Reprocess with --force and seq_len=8
+    run_preprocessing(
+        raw_dir=str(raw_dir),
+        processed_dir=str(processed_dir),
+        seq_len=8,
+        img_size=32,
+        clips_per_video=2,
+        no_face_detect=True,
+        force=True,
+    )
+
+    with open(config_file, "r") as f:
+        cfg2 = json.load(f)
+
+    assert cfg2["seq_len"] == 8
+    assert cfg2["fingerprint"] != fp1
+
+
 if __name__ == "__main__":
     unittest.main()
 
