@@ -173,6 +173,7 @@ st.markdown(
 # Constants & Defaults
 # -----------------------------------------------------------------------------
 DEFAULT_MODEL_PATH = "outputs/demo/best_model.keras"
+REAL_MODEL_PATH = "outputs/best_model.keras"
 UPLOAD_DIR = "data/demo/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
@@ -182,15 +183,38 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 with st.sidebar:
     st.markdown("### ⚙️ Pipeline Configuration")
 
-    model_exists = os.path.exists(DEFAULT_MODEL_PATH)
+    model_options = {
+        "Prototype Model (outputs/demo/best_model.keras)": DEFAULT_MODEL_PATH,
+        "Real Experiment Model (outputs/best_model.keras)": REAL_MODEL_PATH,
+    }
+    selected_model_name = st.selectbox(
+        "Active Model Checkpoint:",
+        options=list(model_options.keys()),
+        index=0,
+        help="Switch between the synthetic demonstration model and a real trained model (when available).",
+    )
+    selected_model_path = model_options[selected_model_name]
+    is_synthetic = "demo" in selected_model_path
+
+    model_exists = os.path.exists(selected_model_path)
     if model_exists:
-        st.success(f"✓ Prototype Model Loaded\n`{DEFAULT_MODEL_PATH}`", icon="✅")
+        if is_synthetic:
+            st.success(f"✓ Prototype Model Loaded\n`{selected_model_path}`", icon="✅")
+        else:
+            st.success(f"✓ Real Experiment Model Loaded\n`{selected_model_path}`", icon="✅")
     else:
-        st.error(
-            f"Model not found at `{DEFAULT_MODEL_PATH}`.\n\n"
-            "Please run `python demo.py` in your terminal to build the prototype model.",
-            icon="⚠️",
-        )
+        if is_synthetic:
+            st.error(
+                f"Prototype model not found at `{selected_model_path}`.\n\n"
+                "Please run `python demo.py` in your terminal to build the prototype model.",
+                icon="⚠️",
+            )
+        else:
+            st.warning(
+                f"Real model not found at `{selected_model_path}`.\n\n"
+                "To train on Celeb-DF v2, place data and run `python train.py`.",
+                icon="ℹ️",
+            )
 
     st.markdown("---")
     st.markdown("#### 🔬 Analysis Settings")
@@ -234,21 +258,34 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Prominent Prototype Status Banner
-st.markdown(
-    """
-    <div class="prototype-banner">
-        <div class="prototype-title">⚠️ PROTOTYPE — Demonstration Model Trained on Synthetic Data</div>
-        <p class="prototype-text">
-            This web interface demonstrates the end-to-end execution of the video preprocessing, temporal sequence extraction,
-            and CNN-LSTM inference pipeline.
-            <b>Results shown by this prototype must not be interpreted as validated real-world deepfake detection performance.</b>
-            Academic evaluation on the official Celeb-DF v2 benchmark requires academic access approval.
-        </p>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+# Status Banner
+if is_synthetic:
+    st.markdown(
+        """
+        <div class="prototype-banner">
+            <div class="prototype-title">⚠️ PROTOTYPE — Demonstration Model Trained on Synthetic Data</div>
+            <p class="prototype-text">
+                This web interface demonstrates the end-to-end execution of the video preprocessing, temporal sequence extraction,
+                and CNN-LSTM inference pipeline.
+                <b>Results shown by this prototype must not be interpreted as validated real-world deepfake detection performance.</b>
+                Academic evaluation on the official Celeb-DF v2 benchmark requires academic access approval.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+else:
+    st.markdown(
+        f"""
+        <div class="prototype-banner" style="border-left-color: #10b981; background: #f0fdf4;">
+            <div class="prototype-title" style="color: #065f46;">🔬 REAL EXPERIMENT MODEL — Trained Checkpoint</div>
+            <p class="prototype-text">
+                Inference is running with the real experiment model checkpoint at <code>{selected_model_path}</code>.
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 # -----------------------------------------------------------------------------
 # Model Overview Metrics
@@ -261,7 +298,9 @@ with col2:
 with col3:
     st.metric(label="Clips Analysed", value="3 Segments", delta="Uniform")
 with col4:
-    st.metric(label="Active Model", value="demo/best_model", delta="Prototype")
+    active_label = "demo/best_model" if is_synthetic else "outputs/best_model"
+    active_delta = "Prototype" if is_synthetic else "Real Data"
+    st.metric(label="Active Model", value=active_label, delta=active_delta)
 
 st.markdown("<br>", unsafe_allow_html=True)
 
@@ -360,12 +399,12 @@ if analyze_clicked and target_video_path:
         st.write("4. 🧠 Generating uint8 temporal sequences of shape (10, 128, 128, 3)...")
         time.sleep(0.2)
 
-        st.write(f"5. ⚡ Running CNN-LSTM model inference with `{DEFAULT_MODEL_PATH}`...")
+        st.write(f"5. ⚡ Running CNN-LSTM model inference with `{selected_model_path}`...")
 
         try:
             result = predict_video(
                 video_path=target_video_path,
-                model_path=DEFAULT_MODEL_PATH,
+                model_path=selected_model_path,
                 threshold=threshold,
                 seq_len=10,
                 img_size=128,
@@ -475,11 +514,16 @@ with st.expander("🛠️ Technical Details & System Architecture", expanded=Fal
 # -----------------------------------------------------------------------------
 # Bottom Disclaimer
 # -----------------------------------------------------------------------------
+footer_msg = (
+    "Prototype only. The current demonstration model is trained/evaluated on synthetic demonstration data. "
+    "Real Celeb-DF validation has not yet been performed."
+    if is_synthetic
+    else f"Evaluated using model checkpoint: {selected_model_path}."
+)
 st.markdown(
-    """
+    f"""
     <div class="footer-disclaimer">
-        Prototype only. The current demonstration model is trained/evaluated on synthetic demonstration data.
-        Real Celeb-DF validation has not yet been performed.
+        {footer_msg}
     </div>
     """,
     unsafe_allow_html=True,

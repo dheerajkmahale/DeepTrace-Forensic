@@ -257,6 +257,80 @@ class TestDeepfakePipeline(unittest.TestCase):
             if os.path.exists(temp_file):
                 os.remove(temp_file)
 
+    def test_celebdf_test_list_splitting(self):
+        """Verify official Celeb-DF test list split mapping."""
+        from preprocess import split_videos_with_test_list
+
+        records = [(f"real_vid_{i}.mp4", 0) for i in range(6)] + [
+            (f"fake_vid_{i}.mp4", 1) for i in range(6)
+        ]
+        test_ids = {"real_vid_0.mp4", "fake_vid_1.mp4"}
+
+        mapping, test_count = split_videos_with_test_list(
+            video_records=records,
+            test_identifiers=test_ids,
+            val_fraction=0.25,
+            seed=42,
+        )
+
+        self.assertEqual(test_count, 2)
+        self.assertEqual(mapping["real_vid_0.mp4"], "test")
+        self.assertEqual(mapping["fake_vid_1.mp4"], "test")
+
+        # Disjointness check
+        train_vids = {v for v, s in mapping.items() if s == "train"}
+        val_vids = {v for v, s in mapping.items() if s == "val"}
+        test_vids = {v for v, s in mapping.items() if s == "test"}
+
+        self.assertEqual(len(train_vids.intersection(val_vids)), 0)
+        self.assertEqual(len(train_vids.intersection(test_vids)), 0)
+        self.assertEqual(len(val_vids.intersection(test_vids)), 0)
+
+    def test_validate_dataset_leakage_detection(self):
+        """Verify validate_processed_dataset catches injected data leakage."""
+        from validate_dataset import validate_processed_dataset
+
+        temp_dir = tempfile.mkdtemp()
+        try:
+            # Create a meta.csv with intentional leakage: same video in train and test
+            meta_rows = [
+                {"path": "clips/c1.npy", "label": 0, "video": "leaked_video", "clip": 0, "split": "train"},
+                {"path": "clips/c2.npy", "label": 0, "video": "leaked_video", "clip": 1, "split": "test"},
+                {"path": "clips/c3.npy", "label": 1, "video": "safe_video", "clip": 0, "split": "val"},
+            ]
+            meta_df = pd.DataFrame(meta_rows)
+            meta_df.to_csv(os.path.join(temp_dir, "meta.csv"), index=False)
+
+            with self.assertRaises(ValueError) as ctx:
+                validate_processed_dataset(processed_dir=temp_dir, check_all_clips=False)
+            self.assertIn("DATA LEAKAGE DETECTED", str(ctx.exception))
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
+    def test_discover_videos_nested(self):
+        """Verify discover_videos finds videos across arbitrary nested subdirectories."""
+        from preprocess import discover_videos
+
+        temp_dir = tempfile.mkdtemp()
+        try:
+            sub1 = os.path.join(temp_dir, "Celeb-real")
+            sub2 = os.path.join(temp_dir, "YouTube-real", "nested")
+            os.makedirs(sub1, exist_ok=True)
+            os.makedirs(sub2, exist_ok=True)
+
+            open(os.path.join(sub1, "vid1.mp4"), "w").close()
+            open(os.path.join(sub2, "vid2.avi"), "w").close()
+            open(os.path.join(temp_dir, "ignored.txt"), "w").close()
+
+            found = discover_videos(temp_dir)
+            self.assertEqual(len(found), 2)
+            basenames = [os.path.basename(p) for p in found]
+            self.assertIn("vid1.mp4", basenames)
+            self.assertIn("vid2.avi", basenames)
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+
 
 if __name__ == "__main__":
     unittest.main()
+

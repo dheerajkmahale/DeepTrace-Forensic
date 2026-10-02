@@ -20,7 +20,18 @@ htmlcov/
 *.h5
 *.hdf5
 
-# Outputs
+# Data array files
+*.npy
+*.npz
+
+# Video media files (never commit raw or test videos)
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.webm
+
+# Project outputs
 outputs/
 
 # Data directories (ignore raw video files, processed and demo data, but keep .gitkeep)
@@ -28,10 +39,9 @@ data/processed/
 data/demo/
 data/demo/uploads/
 uploads/
-data/raw/real/*
-!data/raw/real/.gitkeep
-data/raw/fake/*
-!data/raw/fake/.gitkeep
+data/raw/**
+!data/raw/**/
+!data/raw/**/.gitkeep
 
 # IDE & OS files
 .vscode/

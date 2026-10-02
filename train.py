@@ -71,10 +71,17 @@ def train_model(
     set_seed(seed)
     os.makedirs(output_dir, exist_ok=True)
 
-    meta_path = os.path.join(processed_dir, "meta.csv")
-    if not os.path.exists(meta_path):
-        raise FileNotFoundError(f"meta.csv not found at {meta_path}. Run preprocess.py first.")
+    # Pre-training validation
+    from validate_dataset import validate_processed_dataset
+    print("Validating processed dataset integrity before training...")
+    validate_processed_dataset(
+        processed_dir=processed_dir,
+        expected_seq_len=seq_len,
+        expected_img_size=img_size,
+        check_all_clips=False,
+    )
 
+    meta_path = os.path.join(processed_dir, "meta.csv")
     meta_df = pd.read_csv(meta_path)
     train_df = meta_df[meta_df["split"].str.lower() == "train"]
     val_df = meta_df[meta_df["split"].str.lower() == "val"]

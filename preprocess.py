@@ -1,8 +1,17 @@
 """Video preprocessing and face extraction pipeline for deepfake detection.
 
+Supports both Celeb-DF v2 dataset structures and synthetic demo data.
+
 Pipeline:
-1. Discovers video files in raw directories (real/ and fake/).
-2. Splits videos at the VIDEO level into train/val/test splits using stratification.
+1. Discovers video files in real and fake directories (supporting both flat
+   directories and nested subdirectories such as Celeb-real, YouTube-real,
+   and Celeb-synthesis).
+2. Performs video-level splitting into train/val/test splits:
+   - If an official Celeb-DF testing list (List_of_testing_videos.txt) is provided,
+     videos matching the list are assigned to 'test', and remaining videos are split
+     into 'train' and 'val'.
+   - If no official test list is provided locally, reports that clearly and performs
+     stratified random video-level splitting.
 3. For each video:
    - Divides into clips_per_video equal temporal segments.
    - Samples seq_len evenly spaced frames per segment.
@@ -20,9 +29,8 @@ demo data where human faces are not present. It is NOT for real Celeb-DF data.
 
 import argparse
 import os
-import glob
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import cv2
 import numpy as np
@@ -40,6 +48,103 @@ def get_face_cascade() -> cv2.CascadeClassifier:
     return cascade
 
 
+def discover_videos(search_dir: str) -> List[str]:
+    """Recursively discover video files within a directory.
+
+    Supports nested directory structures (e.g. real/Celeb-real, real/YouTube-real).
+    """
+    if not os.path.exists(search_dir):
+        return []
+
+    valid_extensions = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+    video_paths: List[str] = []
+
+    for root, _, files in os.walk(search_dir):
+        for f in files:
+            if Path(f).suffix.lower() in valid_extensions:
+                video_paths.append(os.path.join(root, f))
+
+    return sorted(video_paths)
+
+
+def load_celebdf_test_list(file_path: str) -> Set[str]:
+    """Parse official Celeb-DF test video list (e.g. List_of_testing_videos.txt).
+
+    Supports formats:
+    - '<label> <rel_path>' (e.g. '1 Celeb-synthesis/id0_id1_0000.mp4')
+    - '<rel_path>' (e.g. 'Celeb-synthesis/id0_id1_0000.mp4')
+    Returns normalized lowercase paths and basenames for flexible matching.
+    """
+    if not os.path.exists(file_path):
+        return set()
+
+    test_ids = set()
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            vpath = parts[-1].replace("\\", "/").lower()
+            test_ids.add(vpath)
+            test_ids.add(os.path.basename(vpath))
+
+    return test_ids
+
+
+def split_videos_with_test_list(
+    video_records: List[Tuple[str, int]],
+    test_identifiers: Set[str],
+    val_fraction: float = 0.15,
+    seed: int = 42,
+) -> Tuple[Dict[str, str], int]:
+    """Assign videos to splits using the official Celeb-DF test video list.
+
+    Videos matching the official test list are assigned to 'test'.
+    Remaining videos are stratified into 'train' and 'val'.
+    """
+    rng = np.random.RandomState(seed)
+    video_to_split: Dict[str, str] = {}
+    non_test_records: List[Tuple[str, int]] = []
+    test_count = 0
+
+    for vid_id, lbl in video_records:
+        norm_id = vid_id.lower().replace("\\", "/")
+        base_name = os.path.basename(norm_id)
+        if norm_id in test_identifiers or base_name in test_identifiers:
+            video_to_split[vid_id] = "test"
+            test_count += 1
+        else:
+            non_test_records.append((vid_id, lbl))
+
+    # Stratify remaining non-test records into train and val
+    by_class: Dict[int, List[str]] = {}
+    for vid, lbl in non_test_records:
+        by_class.setdefault(lbl, []).append(vid)
+
+    for lbl, vids in sorted(by_class.items()):
+        vids_shuffled = list(vids)
+        rng.shuffle(vids_shuffled)
+        n = len(vids_shuffled)
+        if n == 0:
+            continue
+
+        n_val = int(round(n * val_fraction))
+        if n_val == 0 and n > 1:
+            n_val = 1
+        if n_val >= n and n > 1:
+            n_val = n - 1
+
+        val_vids = vids_shuffled[:n_val]
+        train_vids = vids_shuffled[n_val:]
+        for v in train_vids:
+            video_to_split[v] = "train"
+        for v in val_vids:
+            video_to_split[v] = "val"
+
+    return video_to_split, test_count
+
+
 def split_videos_stratified(
     video_records: List[Tuple[str, int]],
     val_fraction: float = 0.15,
@@ -52,15 +157,6 @@ def split_videos_stratified(
     - Every video occurs in exactly one split.
     - No video appears in multiple splits.
     - Every class appears in every split (when sample counts allow).
-
-    Args:
-        video_records: List of tuples (video_path_or_id, label).
-        val_fraction: Fraction of videos for validation split.
-        test_fraction: Fraction of videos for test split.
-        seed: Random seed for deterministic reproducibility.
-
-    Returns:
-        Dict mapping video identifier to split name ("train", "val", "test").
     """
     rng = np.random.RandomState(seed)
     by_class: Dict[int, List[str]] = {}
@@ -75,7 +171,6 @@ def split_videos_stratified(
         n = len(vids_shuffled)
 
         if n < 3:
-            # Too few videos to split across all 3 sets; assign to train
             for v in vids_shuffled:
                 video_to_split[v] = "train"
             continue
@@ -83,7 +178,6 @@ def split_videos_stratified(
         n_test = int(round(n * test_fraction))
         n_val = int(round(n * val_fraction))
 
-        # Ensure at least 1 video in val and test if possible, leaving at least 1 for train
         n_test = max(1, n_test)
         n_val = max(1, n_val)
         while n_test + n_val >= n:
@@ -154,20 +248,7 @@ def extract_clips_from_video(
     no_face_detect: bool = False,
     face_cascade: Optional[cv2.CascadeClassifier] = None,
 ) -> List[np.ndarray]:
-    """Extract processed clips from a video file.
-
-    Args:
-        video_path: Path to input video file.
-        seq_len: Number of frames per clip.
-        img_size: Height and width of extracted frames.
-        clips_per_video: Number of temporal segments to extract.
-        face_margin: Expansion margin ratio around face bounding box.
-        no_face_detect: If True, uses center cropping instead of face detector.
-        face_cascade: Preloaded cv2 CascadeClassifier instance.
-
-    Returns:
-        List of uint8 NumPy arrays of shape (seq_len, img_size, img_size, 3).
-    """
+    """Extract processed clips from a video file."""
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         return []
@@ -188,7 +269,6 @@ def extract_clips_from_video(
         if seg_end <= seg_start:
             continue
 
-        # Sample seq_len evenly spaced frame indices in this temporal segment
         frame_indices = np.linspace(seg_start, seg_end - 1, seq_len, dtype=int)
 
         raw_frames = []
@@ -211,7 +291,6 @@ def extract_clips_from_video(
             clip_array = np.array(processed_frames, dtype=np.uint8)
             valid_clips.append(clip_array)
         else:
-            # Detect faces across frames
             bboxes: List[Optional[Tuple[int, int, int, int]]] = []
             for frame in raw_frames:
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -222,19 +301,15 @@ def extract_clips_from_video(
                     minSize=(30, 30),
                 )
                 if len(detected) > 0:
-                    # Select largest face by area
                     largest = max(detected, key=lambda b: b[2] * b[3])
                     bboxes.append(tuple(largest))
                 else:
                     bboxes.append(None)
 
-            # Check if any face was detected in this clip
             valid_indices = [i for i, b in enumerate(bboxes) if b is not None]
             if not valid_indices:
-                # Skip clip if no face can be found anywhere in the clip
                 continue
 
-            # Fill missing bounding boxes using forward / backward propagation
             filled_bboxes: List[Tuple[int, int, int, int]] = []
             last_valid = bboxes[valid_indices[0]]
             for b in bboxes:
@@ -257,6 +332,9 @@ def extract_clips_from_video(
 
 def run_preprocessing(
     raw_dir: str = "data/raw",
+    real_dir: Optional[str] = None,
+    fake_dir: Optional[str] = None,
+    test_list_path: Optional[str] = None,
     processed_dir: str = "data/processed",
     seq_len: int = 10,
     img_size: int = 128,
@@ -266,72 +344,84 @@ def run_preprocessing(
     test_fraction: float = 0.15,
     seed: int = 42,
     no_face_detect: bool = False,
+    max_videos: Optional[int] = None,
 ) -> pd.DataFrame:
     """Run full preprocessing pipeline.
 
-    1. Discovers videos in raw_dir/real and raw_dir/fake.
-    2. Performs video-level stratified splitting.
-    3. Extracts clips and writes .npy files.
-    4. Writes meta.csv.
-    5. Prints summary statistics.
+    Supports nested directories and optional official Celeb-DF test list.
     """
     if no_face_detect:
         print("[WARNING] --no-face-detect enabled: using center crop instead of face detection.")
         print("          This option is ONLY intended for synthetic demonstration data.")
         print("          Do NOT use --no-face-detect for real Celeb-DF preprocessing.")
 
-    real_dir = os.path.join(raw_dir, "real")
-    fake_dir = os.path.join(raw_dir, "fake")
+    if real_dir is None:
+        real_dir = os.path.join(raw_dir, "real")
+    if fake_dir is None:
+        fake_dir = os.path.join(raw_dir, "fake")
 
-    video_extensions = ("*.mp4", "*.avi", "*.mov", "*.mkv", "*.webm")
-    real_videos: List[str] = []
-    fake_videos: List[str] = []
+    # Discover videos recursively to support subfolders (Celeb-real, YouTube-real, Celeb-synthesis)
+    real_videos = discover_videos(real_dir)
+    fake_videos = discover_videos(fake_dir)
 
-    for ext in video_extensions:
-        real_videos.extend(glob.glob(os.path.join(real_dir, ext)))
-        real_videos.extend(glob.glob(os.path.join(real_dir, ext.upper())))
-        fake_videos.extend(glob.glob(os.path.join(fake_dir, ext)))
-        fake_videos.extend(glob.glob(os.path.join(fake_dir, ext.upper())))
-
-    real_videos = sorted(list(set(real_videos)))
-    fake_videos = sorted(list(set(fake_videos)))
+    if max_videos:
+        half_max = max(1, max_videos // 2)
+        real_videos = real_videos[:half_max]
+        fake_videos = fake_videos[:half_max]
 
     total_video_count = len(real_videos) + len(fake_videos)
-    print(f"Found {len(real_videos)} real videos and {len(fake_videos)} fake videos (Total: {total_video_count}).")
+    print(f"Discovered {len(real_videos)} real videos and {len(fake_videos)} fake videos (Total: {total_video_count}).")
 
     if total_video_count == 0:
-        print("[WARNING] No raw videos found in real/ or fake/ directories.")
-        # Create empty meta.csv with required columns
+        print(f"[WARNING] No raw videos found in '{real_dir}' or '{fake_dir}'.")
         os.makedirs(processed_dir, exist_ok=True)
         meta_df = pd.DataFrame(columns=["path", "label", "video", "clip", "split"])
         meta_df.to_csv(os.path.join(processed_dir, "meta.csv"), index=False)
         return meta_df
 
-    # Prepare records for video-level splitting
-    video_records: List[Tuple[str, int]] = []
+    # Prepare unique video identifiers relative to real_dir / fake_dir
+    video_records: List[Tuple[str, int, str]] = []
     for p in real_videos:
-        video_records.append((os.path.basename(p), 0))
+        rel_id = os.path.relpath(p, real_dir).replace("\\", "/")
+        video_records.append((f"real/{rel_id}", 0, p))
     for p in fake_videos:
-        video_records.append((os.path.basename(p), 1))
+        rel_id = os.path.relpath(p, fake_dir).replace("\\", "/")
+        video_records.append((f"fake/{rel_id}", 1, p))
 
-    # Split videos strictly at the video level BEFORE assigning clips
-    video_to_split = split_videos_stratified(
-        video_records=video_records,
-        val_fraction=val_fraction,
-        test_fraction=test_fraction,
-        seed=seed,
-    )
+    # Check for official Celeb-DF test list
+    test_list_candidate = test_list_path or os.path.join(raw_dir, "List_of_testing_videos.txt")
+    official_test_set = load_celebdf_test_list(test_list_candidate) if os.path.exists(test_list_candidate) else set()
+
+    split_records = [(vid_id, lbl) for vid_id, lbl, _ in video_records]
+
+    if official_test_set:
+        print(f"\n[INFO] Found official Celeb-DF test list at: {test_list_candidate}")
+        video_to_split, test_matched = split_videos_with_test_list(
+            video_records=split_records,
+            test_identifiers=official_test_set,
+            val_fraction=val_fraction,
+            seed=seed,
+        )
+        print(f"       Assigned {test_matched} videos to held-out test split via official list.")
+    else:
+        print("\n[INFO] Official Celeb-DF testing-video list not provided locally.")
+        print("       Using per-video stratified random splitting.")
+        print("       Note: Random video-level split is not equivalent to the official Celeb-DF test benchmark protocol.")
+        video_to_split = split_videos_stratified(
+            video_records=split_records,
+            val_fraction=val_fraction,
+            test_fraction=test_fraction,
+            seed=seed,
+        )
 
     clips_output_dir = os.path.join(processed_dir, "clips")
     os.makedirs(clips_output_dir, exist_ok=True)
 
     face_cascade = None if no_face_detect else get_face_cascade()
-    all_videos = [(p, 0) for p in real_videos] + [(p, 1) for p in fake_videos]
-
     meta_rows: List[Dict] = []
-    for video_path, label in all_videos:
-        video_name = os.path.basename(video_path)
-        video_split = video_to_split.get(video_name, "train")
+
+    for video_id, label, video_path in video_records:
+        video_split = video_to_split.get(video_id, "train")
 
         clips = extract_clips_from_video(
             video_path=video_path,
@@ -343,18 +433,20 @@ def run_preprocessing(
             face_cascade=face_cascade,
         )
 
-        stem = Path(video_name).stem
+        # Create collision-free safe stem from relative video_id
+        safe_stem = video_id.replace("/", "_").replace("\\", "_")
+        safe_stem = Path(safe_stem).stem
+
         for clip_idx, clip_data in enumerate(clips):
-            clip_filename = f"{stem}_clip{clip_idx}.npy"
+            clip_filename = f"{safe_stem}_clip{clip_idx}.npy"
             clip_path = os.path.join(clips_output_dir, clip_filename)
             np.save(clip_path, clip_data)
 
-            # Store relative path from processed_dir
             rel_path = os.path.join("clips", clip_filename).replace("\\", "/")
             meta_rows.append({
                 "path": rel_path,
                 "label": int(label),
-                "video": video_name,
+                "video": video_id,
                 "clip": clip_idx,
                 "split": video_split,
             })
@@ -363,23 +455,22 @@ def run_preprocessing(
     meta_path = os.path.join(processed_dir, "meta.csv")
     meta_df.to_csv(meta_path, index=False)
 
-    # Print useful split statistics
-    print("\n" + "=" * 50)
+    print("\n" + "=" * 55)
     print("PREPROCESSING & SPLIT STATISTICS")
-    print("=" * 50)
+    print("=" * 55)
     print(f"Total videos processed: {total_video_count}")
     print(f"Total clips saved:      {len(meta_df)}")
     if len(meta_df) > 0:
-        real_clips = (meta_df['label'] == 0).sum()
-        fake_clips = (meta_df['label'] == 1).sum()
+        real_clips = (meta_df["label"] == 0).sum()
+        fake_clips = (meta_df["label"] == 1).sum()
         print(f"Clips by label:         Real (0): {real_clips} | Fake (1): {fake_clips}")
         print("Clips by split:")
         for s in ["train", "val", "test"]:
-            cnt = (meta_df['split'] == s).sum()
-            vid_cnt = meta_df[meta_df['split'] == s]['video'].nunique()
+            cnt = (meta_df["split"] == s).sum()
+            vid_cnt = meta_df[meta_df["split"] == s]["video"].nunique()
             print(f"  - {s:<5}: {cnt} clips from {vid_cnt} videos")
     print(f"Metadata saved to:      {meta_path}")
-    print("=" * 50 + "\n")
+    print("=" * 55 + "\n")
 
     return meta_df
 
@@ -387,6 +478,14 @@ def run_preprocessing(
 def main():
     parser = argparse.ArgumentParser(description="Preprocess video dataset for deepfake detection.")
     parser.add_argument("--raw-dir", type=str, default="data/raw", help="Path to raw video directory.")
+    parser.add_argument("--real-dir", type=str, default=None, help="Custom path to real videos directory.")
+    parser.add_argument("--fake-dir", type=str, default=None, help="Custom path to fake videos directory.")
+    parser.add_argument(
+        "--test-list",
+        type=str,
+        default=None,
+        help="Path to official Celeb-DF List_of_testing_videos.txt split file.",
+    )
     parser.add_argument("--processed-dir", type=str, default="data/processed", help="Path to save processed data.")
     parser.add_argument("--seq-len", type=int, default=10, help="Frames per sequence clip.")
     parser.add_argument("--img-size", type=int, default=128, help="Frame spatial resolution (H=W).")
@@ -395,6 +494,12 @@ def main():
     parser.add_argument("--val-fraction", type=float, default=0.15, help="Fraction of videos for validation.")
     parser.add_argument("--test-fraction", type=float, default=0.15, help="Fraction of videos for test.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for splitting.")
+    parser.add_argument(
+        "--max-videos",
+        type=int,
+        default=None,
+        help="Optional limit on total videos to preprocess (useful for quick checks).",
+    )
     parser.add_argument(
         "--no-face-detect",
         action="store_true",
@@ -405,6 +510,9 @@ def main():
 
     run_preprocessing(
         raw_dir=args.raw_dir,
+        real_dir=args.real_dir,
+        fake_dir=args.fake_dir,
+        test_list_path=args.test_list,
         processed_dir=args.processed_dir,
         seq_len=args.seq_len,
         img_size=args.img_size,
@@ -414,6 +522,7 @@ def main():
         test_fraction=args.test_fraction,
         seed=args.seed,
         no_face_detect=args.no_face_detect,
+        max_videos=args.max_videos,
     )
 
 
