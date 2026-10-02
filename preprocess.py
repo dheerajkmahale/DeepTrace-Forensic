@@ -106,20 +106,71 @@ def classify_video_folder(rel_path: str) -> Optional[Tuple[str, int]]:
     return None
 
 
+# ==============================================================================
+# Official Celeb-DF v2 Test List Label Convention (ASSUMPTION TO CONFIRM)
+# ==============================================================================
+# ASSUMPTION TO CONFIRM AGAINST REAL FILE:
+# The official Celeb-DF v2 List_of_testing_videos.txt is documented/believed to use
+# 1 = real and 0 = fake/synthetic, which is inverted relative to this project's
+# internal convention (0 = real, 1 = fake).
+# This assumption remains UNVERIFIED until the real dataset files are placed on disk.
+# If this assumption is incorrect, parsing will fail loudly with a ValueError.
+OFFICIAL_LIST_LABELS: Dict[str, int] = {
+    "real": 1,
+    "fake": 0,
+}
+
+
+def convert_official_list_label_to_project_label(list_label: int) -> int:
+    """Convert an official test-list numeric label to this project's binary label convention.
+
+    Project internal convention:
+    - 0 = real
+    - 1 = fake
+
+    Official list assumption (OFFICIAL_LIST_LABELS):
+    - 1 = real
+    - 0 = fake
+
+    Args:
+        list_label: Integer label parsed from the official list file.
+
+    Returns:
+        Converted project integer label (0 for real, 1 for fake).
+
+    Raises:
+        ValueError: If list_label is not recognized (i.e. neither 0 nor 1).
+    """
+    if list_label == OFFICIAL_LIST_LABELS["real"]:
+        return 0
+    elif list_label == OFFICIAL_LIST_LABELS["fake"]:
+        return 1
+    else:
+        raise ValueError(
+            f"Unrecognized official test-list numeric label: {list_label}. "
+            f"Expected {OFFICIAL_LIST_LABELS['real']} (real) or {OFFICIAL_LIST_LABELS['fake']} (fake)."
+        )
+
+
 def parse_celebdf_test_list(
     file_path: str,
 ) -> List[Tuple[int, str, str, str]]:
     """Parse official Celeb-DF test video list (e.g. List_of_testing_videos.txt).
 
     Each valid line format: '<numeric_label> <rel_path>'
-    (e.g. '1 Celeb-synthesis/id0_id1_0000.mp4' or '0 YouTube-real/00000.mp4').
+    (e.g. '1 YouTube-real/00170.mp4' or '0 Celeb-synthesis/id0_id1_0000.mp4').
+
+    The numeric column is converted from official list convention (1=real, 0=fake)
+    to project convention (0=real, 1=fake) via convert_official_list_label_to_project_label,
+    and then cross-checked strictly against the folder-derived label.
 
     Returns:
         List of tuples: (numeric_label, rel_path, folder_category, filename)
 
     Raises:
         FileNotFoundError: If the test list file does not exist.
-        ValueError: If line format is invalid or if numeric label disagrees with folder-derived label.
+        ValueError: If line format is invalid, numeric label is unrecognized, or if
+                    converted label disagrees with folder-derived label.
     """
     if not os.path.exists(file_path):
         raise FileNotFoundError(f"Test list file not found: '{file_path}'")
@@ -158,11 +209,19 @@ def parse_celebdf_test_list(
 
             folder_category, folder_label = cls
 
-            # Cross-check numeric label against folder-derived label
-            if num_label != folder_label:
+            # Convert numeric column using the official list assumption
+            try:
+                converted_project_label = convert_official_list_label_to_project_label(num_label)
+            except ValueError as e:
+                mismatches.append(f"Line {line_num}: '{line_str}' -> {e}")
+                continue
+
+            # Cross-check converted numeric label against folder-derived label
+            if converted_project_label != folder_label:
                 mismatches.append(
-                    f"Line {line_num}: '{line_str}' -> numeric label is {num_label}, "
-                    f"but folder '{folder_category}' indicates label {folder_label}"
+                    f"Line {line_num}: '{line_str}' -> official list label is {num_label} "
+                    f"(converted to project label {converted_project_label}), "
+                    f"but folder '{folder_category}' indicates project label {folder_label}"
                 )
 
             parsed_entries.append((num_label, rel_path, folder_category, filename))

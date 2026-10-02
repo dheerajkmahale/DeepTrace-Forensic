@@ -344,7 +344,9 @@ class TestDeepfakePipeline(unittest.TestCase):
 import cv2
 import pytest
 from preprocess import (
+    OFFICIAL_LIST_LABELS,
     classify_video_folder,
+    convert_official_list_label_to_project_label,
     discover_videos,
     match_test_list_to_disk,
     parse_celebdf_test_list,
@@ -368,6 +370,19 @@ def _make_dummy_video(path: str, num_frames: int = 12, width: int = 32, height: 
         out.write(frame)
     out.release()
     return str(path)
+
+
+def test_official_label_conversion_logic():
+    """Verify conversion from official convention (1=real, 0=fake) to project convention (0=real, 1=fake)."""
+    assert OFFICIAL_LIST_LABELS["real"] == 1
+    assert OFFICIAL_LIST_LABELS["fake"] == 0
+
+    assert convert_official_list_label_to_project_label(1) == 0  # real
+    assert convert_official_list_label_to_project_label(0) == 1  # fake
+
+    with pytest.raises(ValueError) as excinfo:
+        convert_official_list_label_to_project_label(2)
+    assert "Unrecognized official test-list numeric label: 2" in str(excinfo.value)
 
 
 def test_recursive_discovery_and_classification(tmp_path):
@@ -420,7 +435,7 @@ def test_case_insensitive_folders(tmp_path):
 
 
 def test_official_test_list_parsing_and_matching(tmp_path):
-    """Test 3: Official test list parsing by folder + filename matching."""
+    """Test 3: Official test list parsing by folder + filename matching using official convention (1=real, 0=fake)."""
     raw_dir = tmp_path / "raw"
     _make_dummy_video(str(raw_dir / "Celeb-real" / "id0_0000.mp4"))
     _make_dummy_video(str(raw_dir / "YouTube-real" / "00000.mp4"))
@@ -428,14 +443,14 @@ def test_official_test_list_parsing_and_matching(tmp_path):
 
     test_list_file = tmp_path / "List_of_testing_videos.txt"
     test_list_file.write_text(
-        "0 Celeb-real/id0_0000.mp4\n"
-        "1 Celeb-synthesis/id0_id1_0000.mp4\n"
+        "1 Celeb-real/id0_0000.mp4\n"
+        "0 Celeb-synthesis/id0_id1_0000.mp4\n"
     )
 
     parsed = parse_celebdf_test_list(str(test_list_file))
     assert len(parsed) == 2
-    assert parsed[0] == (0, "Celeb-real/id0_0000.mp4", "Celeb-real", "id0_0000.mp4")
-    assert parsed[1] == (1, "Celeb-synthesis/id0_id1_0000.mp4", "Celeb-synthesis", "id0_id1_0000.mp4")
+    assert parsed[0] == (1, "Celeb-real/id0_0000.mp4", "Celeb-real", "id0_0000.mp4")
+    assert parsed[1] == (0, "Celeb-synthesis/id0_id1_0000.mp4", "Celeb-synthesis", "id0_id1_0000.mp4")
 
     # Match against disk
     video_records = [
@@ -450,23 +465,57 @@ def test_official_test_list_parsing_and_matching(tmp_path):
     assert "YouTube-real/00000.mp4" not in mapping
 
 
-def test_label_mismatch_detection(tmp_path):
-    """Test 4: Cross-check each list entry's numeric label against folder label and fail on mismatch."""
-    mismatched_list = tmp_path / "mismatch_test_list.txt"
-    # Line 1: numeric label says 1 (fake), but folder Celeb-real indicates 0 (real)
-    mismatched_list.write_text("1 Celeb-real/id0_0000.mp4\n")
+def test_official_convention_test_list_parses(tmp_path):
+    """(a) Test that a correct official-convention list (1=real, 0=fake) parses successfully."""
+    list_file = tmp_path / "official_test_list.txt"
+    list_file.write_text(
+        "1 YouTube-real/00170.mp4\n"
+        "1 Celeb-real/id0_0000.mp4\n"
+        "0 Celeb-synthesis/id0_id1_0000.mp4\n"
+    )
+    parsed = parse_celebdf_test_list(str(list_file))
+    assert len(parsed) == 3
+    assert parsed[0][0] == 1  # 1 in list -> real
+    assert parsed[0][2] == "YouTube-real"
+    assert parsed[1][0] == 1  # 1 in list -> real
+    assert parsed[1][2] == "Celeb-real"
+    assert parsed[2][0] == 0  # 0 in list -> fake
+    assert parsed[2][2] == "Celeb-synthesis"
 
+
+def test_project_convention_test_list_rejected(tmp_path):
+    """(b) Test that a list using the project's internal convention (0=real, 1=fake) is rejected."""
+    list_file = tmp_path / "project_convention_list.txt"
+    # Project convention uses 0=real and 1=fake. Under official list assumption (1=real, 0=fake),
+    # this must be caught and rejected with clear line numbers.
+    list_file.write_text(
+        "0 YouTube-real/00170.mp4\n"
+        "1 Celeb-synthesis/id0_id1_0000.mp4\n"
+    )
     with pytest.raises(ValueError) as excinfo:
-        parse_celebdf_test_list(str(mismatched_list))
-    assert "Label mismatch detected" in str(excinfo.value)
-    assert "numeric label is 1, but folder 'Celeb-real' indicates label 0" in str(excinfo.value)
+        parse_celebdf_test_list(str(list_file))
+    err_msg = str(excinfo.value)
+    assert "Label mismatch detected in official test list" in err_msg
+    assert "Line 1:" in err_msg
+    assert "official list label is 0" in err_msg
+    assert "Line 2:" in err_msg
+    assert "official list label is 1" in err_msg
 
-    # Line 2: numeric label says 0 (real), but folder Celeb-synthesis indicates 1 (fake)
-    mismatched_list.write_text("0 Celeb-synthesis/id0_id1_0000.mp4\n")
-    with pytest.raises(ValueError) as excinfo2:
-        parse_celebdf_test_list(str(mismatched_list))
-    assert "Label mismatch detected" in str(excinfo2.value)
-    assert "numeric label is 0, but folder 'Celeb-synthesis' indicates label 1" in str(excinfo2.value)
+
+def test_single_wrong_entry_rejected(tmp_path):
+    """(c) Test that a list with even a single wrong entry is rejected with line number."""
+    list_file = tmp_path / "single_wrong_entry_list.txt"
+    list_file.write_text(
+        "1 YouTube-real/00170.mp4\n"
+        "0 Celeb-real/id0_0000.mp4\n"  # Wrong: Celeb-real is real, so should be 1 under official list convention
+        "0 Celeb-synthesis/id0_id1_0000.mp4\n"
+    )
+    with pytest.raises(ValueError) as excinfo:
+        parse_celebdf_test_list(str(list_file))
+    err_msg = str(excinfo.value)
+    assert "Label mismatch detected in official test list" in err_msg
+    assert "Line 2:" in err_msg
+    assert "Celeb-real" in err_msg
 
 
 def test_missing_file_failure(tmp_path):
@@ -476,8 +525,8 @@ def test_missing_file_failure(tmp_path):
 
     test_list_file = tmp_path / "List_of_testing_videos.txt"
     test_list_file.write_text(
-        "0 Celeb-real/id0_0000.mp4\n"
-        "1 Celeb-synthesis/id99_id99_9999.mp4\n"  # Missing on disk!
+        "1 Celeb-real/id0_0000.mp4\n"
+        "0 Celeb-synthesis/id99_id99_9999.mp4\n"  # Missing on disk!
     )
 
     parsed = parse_celebdf_test_list(str(test_list_file))
@@ -507,11 +556,11 @@ def test_split_disjointness_and_zero_clip_leakage(tmp_path):
     v_fake2 = _make_dummy_video(str(raw_dir / "Celeb-synthesis" / "id0_id2_0000.mp4"))
     v_fake3 = _make_dummy_video(str(raw_dir / "Celeb-synthesis" / "id1_id2_0000.mp4"))
 
-    # Test list contains exactly 2 videos: 1 real, 1 fake
+    # Test list contains exactly 2 videos: 1 real (label 1), 1 fake (label 0)
     test_list_file = raw_dir / "List_of_testing_videos.txt"
     test_list_file.write_text(
-        "0 Celeb-real/id0_0000.mp4\n"
-        "1 Celeb-synthesis/id0_id1_0000.mp4\n"
+        "1 Celeb-real/id0_0000.mp4\n"
+        "0 Celeb-synthesis/id0_id1_0000.mp4\n"
     )
 
     meta_df = run_preprocessing(
