@@ -337,6 +337,253 @@ class TestDeepfakePipeline(unittest.TestCase):
             shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+# ==============================================================================
+# Pytest Fixture-Based Tests for Celeb-DF v2 Preprocessing & Validation
+# ==============================================================================
+
+import cv2
+import pytest
+from preprocess import (
+    classify_video_folder,
+    discover_videos,
+    match_test_list_to_disk,
+    parse_celebdf_test_list,
+    run_preprocessing,
+)
+from validate_dataset import (
+    extract_identities_from_filename,
+    generate_identity_overlap_report,
+    validate_processed_dataset,
+    validate_raw_dataset,
+)
+
+
+def _make_dummy_video(path: str, num_frames: int = 12, width: int = 32, height: int = 32) -> str:
+    """Helper to generate a tiny valid video file with cv2.VideoWriter."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+    out = cv2.VideoWriter(str(path), fourcc, 10.0, (width, height))
+    for i in range(num_frames):
+        frame = np.full((height, width, 3), (i * 20) % 255, dtype=np.uint8)
+        out.write(frame)
+    out.release()
+    return str(path)
+
+
+def test_recursive_discovery_and_classification(tmp_path):
+    """Test 1: Recursive discovery finds videos in subdirectories and nested 'videos/' folders,
+    deriving labels strictly from folder names.
+    """
+    raw_dir = tmp_path / "raw"
+    v1 = _make_dummy_video(str(raw_dir / "Celeb-real" / "videos" / "id0_0000.mp4"))
+    v2 = _make_dummy_video(str(raw_dir / "YouTube-real" / "00000.mp4"))
+    v3 = _make_dummy_video(str(raw_dir / "Celeb-synthesis" / "videos" / "id0_id1_0000.mp4"))
+
+    # Recursive video discovery
+    discovered = discover_videos(str(raw_dir))
+    assert len(discovered) == 3
+
+    # Derive labels strictly from folder name
+    cls1 = classify_video_folder("Celeb-real/videos/id0_0000.mp4")
+    assert cls1 == ("Celeb-real", 0)  # Real
+
+    cls2 = classify_video_folder("YouTube-real/00000.mp4")
+    assert cls2 == ("YouTube-real", 0)  # Real
+
+    cls3 = classify_video_folder("Celeb-synthesis/videos/id0_id1_0000.mp4")
+    assert cls3 == ("Celeb-synthesis", 1)  # Fake
+
+    # Validate raw dataset finds and verifies all 3
+    stats = validate_raw_dataset(raw_dir=str(raw_dir), check_readability=True)
+    assert stats["total_videos"] == 3
+    assert stats["by_category"]["Celeb-real"] == 1
+    assert stats["by_category"]["YouTube-real"] == 1
+    assert stats["by_category"]["Celeb-synthesis"] == 1
+    assert stats["corrupted_count"] == 0
+
+
+def test_case_insensitive_folders(tmp_path):
+    """Test 2: Case-insensitive folder matching tolerates arbitrary casing."""
+    raw_dir = tmp_path / "raw_mixed"
+    _make_dummy_video(str(raw_dir / "celeb-REAL" / "id1_0000.mp4"))
+    _make_dummy_video(str(raw_dir / "Youtube-Real" / "videos" / "00001.mp4"))
+    _make_dummy_video(str(raw_dir / "Celeb-SYNTHESIS" / "videos" / "id1_id2_0000.mp4"))
+
+    cls1 = classify_video_folder("celeb-REAL/id1_0000.mp4")
+    assert cls1 == ("Celeb-real", 0)
+
+    cls2 = classify_video_folder("Youtube-Real/videos/00001.mp4")
+    assert cls2 == ("YouTube-real", 0)
+
+    cls3 = classify_video_folder("Celeb-SYNTHESIS/videos/id1_id2_0000.mp4")
+    assert cls3 == ("Celeb-synthesis", 1)
+
+
+def test_official_test_list_parsing_and_matching(tmp_path):
+    """Test 3: Official test list parsing by folder + filename matching."""
+    raw_dir = tmp_path / "raw"
+    _make_dummy_video(str(raw_dir / "Celeb-real" / "id0_0000.mp4"))
+    _make_dummy_video(str(raw_dir / "YouTube-real" / "00000.mp4"))
+    _make_dummy_video(str(raw_dir / "Celeb-synthesis" / "id0_id1_0000.mp4"))
+
+    test_list_file = tmp_path / "List_of_testing_videos.txt"
+    test_list_file.write_text(
+        "0 Celeb-real/id0_0000.mp4\n"
+        "1 Celeb-synthesis/id0_id1_0000.mp4\n"
+    )
+
+    parsed = parse_celebdf_test_list(str(test_list_file))
+    assert len(parsed) == 2
+    assert parsed[0] == (0, "Celeb-real/id0_0000.mp4", "Celeb-real", "id0_0000.mp4")
+    assert parsed[1] == (1, "Celeb-synthesis/id0_id1_0000.mp4", "Celeb-synthesis", "id0_id1_0000.mp4")
+
+    # Match against disk
+    video_records = [
+        ("Celeb-real/id0_0000.mp4", "Celeb-real", 0, str(raw_dir / "Celeb-real" / "id0_0000.mp4")),
+        ("YouTube-real/00000.mp4", "YouTube-real", 0, str(raw_dir / "YouTube-real" / "00000.mp4")),
+        ("Celeb-synthesis/id0_id1_0000.mp4", "Celeb-synthesis", 1, str(raw_dir / "Celeb-synthesis" / "id0_id1_0000.mp4")),
+    ]
+    mapping = match_test_list_to_disk(parsed, video_records, str(raw_dir))
+    assert len(mapping) == 2
+    assert mapping["Celeb-real/id0_0000.mp4"] == "test"
+    assert mapping["Celeb-synthesis/id0_id1_0000.mp4"] == "test"
+    assert "YouTube-real/00000.mp4" not in mapping
+
+
+def test_label_mismatch_detection(tmp_path):
+    """Test 4: Cross-check each list entry's numeric label against folder label and fail on mismatch."""
+    mismatched_list = tmp_path / "mismatch_test_list.txt"
+    # Line 1: numeric label says 1 (fake), but folder Celeb-real indicates 0 (real)
+    mismatched_list.write_text("1 Celeb-real/id0_0000.mp4\n")
+
+    with pytest.raises(ValueError) as excinfo:
+        parse_celebdf_test_list(str(mismatched_list))
+    assert "Label mismatch detected" in str(excinfo.value)
+    assert "numeric label is 1, but folder 'Celeb-real' indicates label 0" in str(excinfo.value)
+
+    # Line 2: numeric label says 0 (real), but folder Celeb-synthesis indicates 1 (fake)
+    mismatched_list.write_text("0 Celeb-synthesis/id0_id1_0000.mp4\n")
+    with pytest.raises(ValueError) as excinfo2:
+        parse_celebdf_test_list(str(mismatched_list))
+    assert "Label mismatch detected" in str(excinfo2.value)
+    assert "numeric label is 0, but folder 'Celeb-synthesis' indicates label 1" in str(excinfo2.value)
+
+
+def test_missing_file_failure(tmp_path):
+    """Test 5: Fail loudly with clear message if any list entry has no file on disk."""
+    raw_dir = tmp_path / "raw_missing"
+    _make_dummy_video(str(raw_dir / "Celeb-real" / "id0_0000.mp4"))
+
+    test_list_file = tmp_path / "List_of_testing_videos.txt"
+    test_list_file.write_text(
+        "0 Celeb-real/id0_0000.mp4\n"
+        "1 Celeb-synthesis/id99_id99_9999.mp4\n"  # Missing on disk!
+    )
+
+    parsed = parse_celebdf_test_list(str(test_list_file))
+    video_records = [
+        ("Celeb-real/id0_0000.mp4", "Celeb-real", 0, str(raw_dir / "Celeb-real" / "id0_0000.mp4")),
+    ]
+
+    with pytest.raises(FileNotFoundError) as excinfo:
+        match_test_list_to_disk(parsed, video_records, str(raw_dir))
+    assert "do not exist on disk" in str(excinfo.value)
+    assert "id99_id99_9999.mp4" in str(excinfo.value)
+
+
+def test_split_disjointness_and_zero_clip_leakage(tmp_path):
+    """Test 6: Video-level split disjointness with official test list, zero clip leakage,
+    and no test_fraction usage for test set creation.
+    """
+    raw_dir = tmp_path / "raw"
+    processed_dir = tmp_path / "processed"
+
+    # Create 6 videos (3 real, 3 fake)
+    v_real1 = _make_dummy_video(str(raw_dir / "Celeb-real" / "id0_0000.mp4"))
+    v_real2 = _make_dummy_video(str(raw_dir / "Celeb-real" / "id1_0000.mp4"))
+    v_real3 = _make_dummy_video(str(raw_dir / "YouTube-real" / "00000.mp4"))
+
+    v_fake1 = _make_dummy_video(str(raw_dir / "Celeb-synthesis" / "id0_id1_0000.mp4"))
+    v_fake2 = _make_dummy_video(str(raw_dir / "Celeb-synthesis" / "id0_id2_0000.mp4"))
+    v_fake3 = _make_dummy_video(str(raw_dir / "Celeb-synthesis" / "id1_id2_0000.mp4"))
+
+    # Test list contains exactly 2 videos: 1 real, 1 fake
+    test_list_file = raw_dir / "List_of_testing_videos.txt"
+    test_list_file.write_text(
+        "0 Celeb-real/id0_0000.mp4\n"
+        "1 Celeb-synthesis/id0_id1_0000.mp4\n"
+    )
+
+    meta_df = run_preprocessing(
+        raw_dir=str(raw_dir),
+        processed_dir=str(processed_dir),
+        test_list_path=str(test_list_file),
+        seq_len=6,
+        img_size=32,
+        clips_per_video=2,
+        val_fraction=0.33,
+        seed=42,
+        no_face_detect=True,
+    )
+
+    # 1. Total clips = 6 videos * 2 clips = 12 clips
+    assert len(meta_df) == 12
+
+    # 2. Test split contains exactly the 2 test list videos
+    test_videos = set(meta_df[meta_df["split"] == "test"]["video"].unique())
+    train_videos = set(meta_df[meta_df["split"] == "train"]["video"].unique())
+    val_videos = set(meta_df[meta_df["split"] == "val"]["video"].unique())
+
+    assert len(test_videos) == 2
+    assert "Celeb-real/id0_0000.mp4" in test_videos
+    assert "Celeb-synthesis/id0_id1_0000.mp4" in test_videos
+
+    # 3. Splits are strictly pairwise disjoint at the video level
+    assert len(train_videos.intersection(val_videos)) == 0
+    assert len(train_videos.intersection(test_videos)) == 0
+    assert len(val_videos.intersection(test_videos)) == 0
+
+    # 4. Zero clip leakage into train/val
+    test_clips_in_train_or_val = meta_df[
+        (meta_df["video"].isin(test_videos)) & (meta_df["split"].isin(["train", "val"]))
+    ]
+    assert len(test_clips_in_train_or_val) == 0
+
+    # 5. Run validate_processed_dataset and confirm it passes
+    stats = validate_processed_dataset(
+        processed_dir=str(processed_dir),
+        expected_seq_len=6,
+        expected_img_size=32,
+        check_all_clips=True,
+    )
+    assert stats["leakage_passed"] is True
+    assert stats["test_videos"] == 2
+
+
+def test_celebrity_identity_overlap_report():
+    """Test 7: Informational celebrity identity extraction and overlap reporting."""
+    # Filename parsing
+    assert extract_identities_from_filename("id0_0000.mp4") == {"id0"}
+    assert extract_identities_from_filename("id0_id1_0000.mp4") == {"id0", "id1"}
+    assert extract_identities_from_filename("00170.mp4") == set()
+
+    # Synthetic meta dataframe with known identity overlap
+    meta_df = pd.DataFrame([
+        {"path": "c1.npy", "label": 0, "video": "Celeb-real/id0_0000.mp4", "clip": 0, "split": "train"},
+        {"path": "c2.npy", "label": 0, "video": "Celeb-real/id1_0000.mp4", "clip": 0, "split": "val"},
+        {"path": "c3.npy", "label": 1, "video": "Celeb-synthesis/id0_id2_0000.mp4", "clip": 0, "split": "test"},
+    ])
+
+    report = generate_identity_overlap_report(meta_df)
+    assert "id0" in report["train_identities"]
+    assert "id1" in report["val_identities"]
+    assert "id0" in report["test_identities"]
+    assert "id2" in report["test_identities"]
+    assert "id0" in report["train_test_overlap"]
+    assert len(report["val_test_overlap"]) == 0
+
+
 if __name__ == "__main__":
     unittest.main()
+
 

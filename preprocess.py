@@ -67,14 +67,191 @@ def discover_videos(search_dir: str) -> List[str]:
     return sorted(video_paths)
 
 
-def load_celebdf_test_list(file_path: str) -> Set[str]:
+def classify_video_folder(rel_path: str) -> Optional[Tuple[str, int]]:
+    """Derive canonical class folder and binary label (0=real, 1=fake) from folder name.
+
+    Matches class folders case-insensitively:
+    - Celeb-real -> real (0)
+    - YouTube-real / Youtube-real -> real (0)
+    - Celeb-synthesis -> fake (1)
+    - Tolerates an extra nested 'videos/' folder inside each.
+    - Also supports generic 'real' -> real (0) and 'fake' -> fake (1).
+
+    Derives the label strictly from the FOLDER name, never from a numeric column.
+    """
+    norm = rel_path.replace("\\", "/").strip("/")
+    parts = [p.lower() for p in norm.split("/") if p]
+    if not parts:
+        return None
+
+    # Inspect directory components excluding the video filename
+    video_exts = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+    if any(parts[-1].endswith(ext) for ext in video_exts):
+        dir_parts = parts[:-1]
+    else:
+        dir_parts = parts
+
+    # Priority matching for Celeb-DF v2 standard folders
+    if any(p == "celeb-synthesis" for p in dir_parts):
+        return ("Celeb-synthesis", 1)
+    if any(p in ("youtube-real", "youtubereal") for p in dir_parts):
+        return ("YouTube-real", 0)
+    if any(p in ("celeb-real", "celebreal") for p in dir_parts):
+        return ("Celeb-real", 0)
+    if any(p == "fake" for p in dir_parts):
+        return ("fake", 1)
+    if any(p == "real" for p in dir_parts):
+        return ("real", 0)
+
+    return None
+
+
+def parse_celebdf_test_list(
+    file_path: str,
+) -> List[Tuple[int, str, str, str]]:
     """Parse official Celeb-DF test video list (e.g. List_of_testing_videos.txt).
 
-    Supports formats:
-    - '<label> <rel_path>' (e.g. '1 Celeb-synthesis/id0_id1_0000.mp4')
-    - '<rel_path>' (e.g. 'Celeb-synthesis/id0_id1_0000.mp4')
-    Returns normalized lowercase paths and basenames for flexible matching.
+    Each valid line format: '<numeric_label> <rel_path>'
+    (e.g. '1 Celeb-synthesis/id0_id1_0000.mp4' or '0 YouTube-real/00000.mp4').
+
+    Returns:
+        List of tuples: (numeric_label, rel_path, folder_category, filename)
+
+    Raises:
+        FileNotFoundError: If the test list file does not exist.
+        ValueError: If line format is invalid or if numeric label disagrees with folder-derived label.
     """
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"Test list file not found: '{file_path}'")
+
+    parsed_entries: List[Tuple[int, str, str, str]] = []
+    mismatches: List[str] = []
+
+    with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+        for line_num, line in enumerate(f, start=1):
+            line_str = line.strip()
+            if not line_str or line_str.startswith("#"):
+                continue
+
+            parts = line_str.split()
+            if len(parts) < 2:
+                raise ValueError(
+                    f"Invalid format in test list '{file_path}' at line {line_num}: "
+                    f"expected '<numeric_label> <rel_path>', got: '{line_str}'"
+                )
+
+            try:
+                num_label = int(parts[0])
+            except ValueError:
+                raise ValueError(
+                    f"Non-integer label in test list '{file_path}' at line {line_num}: '{parts[0]}'"
+                )
+
+            rel_path = parts[1].replace("\\", "/")
+            filename = os.path.basename(rel_path)
+
+            cls = classify_video_folder(rel_path)
+            if cls is None:
+                raise ValueError(
+                    f"Unrecognized class folder in test list '{file_path}' at line {line_num}: '{rel_path}'"
+                )
+
+            folder_category, folder_label = cls
+
+            # Cross-check numeric label against folder-derived label
+            if num_label != folder_label:
+                mismatches.append(
+                    f"Line {line_num}: '{line_str}' -> numeric label is {num_label}, "
+                    f"but folder '{folder_category}' indicates label {folder_label}"
+                )
+
+            parsed_entries.append((num_label, rel_path, folder_category, filename))
+
+    if mismatches:
+        raise ValueError(
+            f"Label mismatch detected in official test list '{file_path}' ({len(mismatches)} mismatches):\n"
+            + "\n".join(mismatches[:10])
+        )
+
+    return parsed_entries
+
+
+def match_test_list_to_disk(
+    test_entries: List[Tuple[int, str, str, str]],
+    video_records: List[Tuple[str, str, int, str]],
+    raw_dir: str,
+) -> Dict[str, str]:
+    """Match test list entries to discovered videos on disk by folder + filename.
+
+    Returns:
+        Dict mapping video_id to 'test' for all matched test videos.
+
+    Raises:
+        FileNotFoundError: If any test list entry has no matching video file on disk.
+    """
+    # Build disk lookup: (folder_category.lower(), filename.lower()) -> video_id
+    disk_lookup: Dict[Tuple[str, str], str] = {}
+    for vid_id, folder_cat, lbl, abs_path in video_records:
+        key = (folder_cat.lower(), os.path.basename(abs_path).lower())
+        disk_lookup[key] = vid_id
+
+    matched_video_ids: Set[str] = set()
+    missing_entries: List[str] = []
+
+    for num_lbl, rel_path, folder_cat, filename in test_entries:
+        key = (folder_cat.lower(), filename.lower())
+        if key in disk_lookup:
+            matched_video_ids.add(disk_lookup[key])
+        else:
+            missing_entries.append(f"{rel_path} (folder: {folder_cat}, filename: {filename})")
+
+    if missing_entries:
+        missing_preview = "\n  - ".join(missing_entries[:10])
+        raise FileNotFoundError(
+            f"Official test list contains {len(missing_entries)} entries that do not exist on disk in '{raw_dir}':\n"
+            f"  - {missing_preview}\n"
+            f"Please verify that the dataset files exist on disk."
+        )
+
+    return {vid_id: "test" for vid_id in matched_video_ids}
+
+
+def split_remaining_train_val(
+    remaining_records: List[Tuple[str, int]],
+    val_fraction: float = 0.15,
+    seed: int = 42,
+) -> Dict[str, str]:
+    """Stratified per-video split for remaining non-test videos into train and val."""
+    rng = np.random.RandomState(seed)
+    by_class: Dict[int, List[str]] = {}
+    for vid_id, lbl in remaining_records:
+        by_class.setdefault(lbl, []).append(vid_id)
+
+    train_val_split: Dict[str, str] = {}
+    for lbl, vids in sorted(by_class.items()):
+        vids_shuffled = list(vids)
+        rng.shuffle(vids_shuffled)
+        n = len(vids_shuffled)
+        if n == 0:
+            continue
+        n_val = int(round(n * val_fraction))
+        if n_val == 0 and n > 1:
+            n_val = 1
+        if n_val >= n and n > 1:
+            n_val = n - 1
+
+        val_vids = vids_shuffled[:n_val]
+        train_vids = vids_shuffled[n_val:]
+        for v in train_vids:
+            train_val_split[v] = "train"
+        for v in val_vids:
+            train_val_split[v] = "val"
+
+    return train_val_split
+
+
+def load_celebdf_test_list(file_path: str) -> Set[str]:
+    """Parse official Celeb-DF test video list (legacy compatibility wrapper)."""
     if not os.path.exists(file_path):
         return set()
 
@@ -98,11 +275,7 @@ def split_videos_with_test_list(
     val_fraction: float = 0.15,
     seed: int = 42,
 ) -> Tuple[Dict[str, str], int]:
-    """Assign videos to splits using the official Celeb-DF test video list.
-
-    Videos matching the official test list are assigned to 'test'.
-    Remaining videos are stratified into 'train' and 'val'.
-    """
+    """Assign videos to splits using test identifiers (legacy compatibility wrapper)."""
     rng = np.random.RandomState(seed)
     video_to_split: Dict[str, str] = {}
     non_test_records: List[Tuple[str, int]] = []
@@ -117,7 +290,6 @@ def split_videos_with_test_list(
         else:
             non_test_records.append((vid_id, lbl))
 
-    # Stratify remaining non-test records into train and val
     by_class: Dict[int, List[str]] = {}
     for vid, lbl in non_test_records:
         by_class.setdefault(lbl, []).append(vid)
@@ -355,58 +527,79 @@ def run_preprocessing(
         print("          This option is ONLY intended for synthetic demonstration data.")
         print("          Do NOT use --no-face-detect for real Celeb-DF preprocessing.")
 
-    if real_dir is None:
-        real_dir = os.path.join(raw_dir, "real")
-    if fake_dir is None:
-        fake_dir = os.path.join(raw_dir, "fake")
+    # Discover videos recursively using os.walk
+    # If explicit real_dir and fake_dir are provided, discover in them
+    # Otherwise discover all videos across raw_dir (which may live outside OneDrive, e.g. D:\datasets\Celeb-DF-v2)
+    video_records: List[Tuple[str, str, int, str]] = []  # (video_id, folder_category, label, full_path)
 
-    # Discover videos recursively to support subfolders (Celeb-real, YouTube-real, Celeb-synthesis)
-    real_videos = discover_videos(real_dir)
-    fake_videos = discover_videos(fake_dir)
+    custom_dirs_provided = (real_dir is not None and fake_dir is not None)
 
-    if max_videos:
-        half_max = max(1, max_videos // 2)
-        real_videos = real_videos[:half_max]
-        fake_videos = fake_videos[:half_max]
+    if custom_dirs_provided:
+        for p in discover_videos(real_dir):
+            cls = classify_video_folder(p)
+            cat = cls[0] if cls else "real"
+            rel_id = f"real/{os.path.relpath(p, real_dir).replace('\\', '/')}"
+            video_records.append((rel_id, cat, 0, p))
+        for p in discover_videos(fake_dir):
+            cls = classify_video_folder(p)
+            cat = cls[0] if cls else "fake"
+            rel_id = f"fake/{os.path.relpath(p, fake_dir).replace('\\', '/')}"
+            video_records.append((rel_id, cat, 1, p))
+    else:
+        all_raw_videos = discover_videos(raw_dir)
+        for p in all_raw_videos:
+            rel_to_raw = os.path.relpath(p, raw_dir).replace("\\", "/")
+            cls = classify_video_folder(rel_to_raw)
+            if cls is not None:
+                cat, lbl = cls
+                video_records.append((rel_to_raw, cat, lbl, p))
 
-    total_video_count = len(real_videos) + len(fake_videos)
-    print(f"Discovered {len(real_videos)} real videos and {len(fake_videos)} fake videos (Total: {total_video_count}).")
+    if max_videos and len(video_records) > max_videos:
+        video_records = video_records[:max_videos]
+
+    total_video_count = len(video_records)
+    real_count = sum(1 for _, _, lbl, _ in video_records if lbl == 0)
+    fake_count = sum(1 for _, _, lbl, _ in video_records if lbl == 1)
+    print(f"Discovered {real_count} real videos and {fake_count} fake videos (Total: {total_video_count}).")
 
     if total_video_count == 0:
-        print(f"[WARNING] No raw videos found in '{real_dir}' or '{fake_dir}'.")
+        print(f"[WARNING] No raw videos found in '{raw_dir}'.")
         os.makedirs(processed_dir, exist_ok=True)
         meta_df = pd.DataFrame(columns=["path", "label", "video", "clip", "split"])
         meta_df.to_csv(os.path.join(processed_dir, "meta.csv"), index=False)
         return meta_df
 
-    # Prepare unique video identifiers relative to real_dir / fake_dir
-    video_records: List[Tuple[str, int, str]] = []
-    for p in real_videos:
-        rel_id = os.path.relpath(p, real_dir).replace("\\", "/")
-        video_records.append((f"real/{rel_id}", 0, p))
-    for p in fake_videos:
-        rel_id = os.path.relpath(p, fake_dir).replace("\\", "/")
-        video_records.append((f"fake/{rel_id}", 1, p))
-
     # Check for official Celeb-DF test list
     test_list_candidate = test_list_path or os.path.join(raw_dir, "List_of_testing_videos.txt")
-    official_test_set = load_celebdf_test_list(test_list_candidate) if os.path.exists(test_list_candidate) else set()
 
-    split_records = [(vid_id, lbl) for vid_id, lbl, _ in video_records]
-
-    if official_test_set:
+    if os.path.exists(test_list_candidate):
         print(f"\n[INFO] Found official Celeb-DF test list at: {test_list_candidate}")
-        video_to_split, test_matched = split_videos_with_test_list(
-            video_records=split_records,
-            test_identifiers=official_test_set,
+        parsed_test_entries = parse_celebdf_test_list(test_list_candidate)
+        print(f"       Parsed {len(parsed_test_entries)} entries from official test list.")
+
+        # Match entries to files on disk by folder + filename (fails loudly if any missing)
+        video_to_split = match_test_list_to_disk(
+            test_entries=parsed_test_entries,
+            video_records=video_records,
+            raw_dir=raw_dir,
+        )
+        print(f"       Assigned {len(video_to_split)} videos to held-out test split via official list.")
+
+        # Split remaining videos into train and val (PER VIDEO, stratified, seeded; test_fraction is NOT used)
+        remaining_records = [
+            (vid_id, lbl) for vid_id, _, lbl, _ in video_records if vid_id not in video_to_split
+        ]
+        train_val_split = split_remaining_train_val(
+            remaining_records=remaining_records,
             val_fraction=val_fraction,
             seed=seed,
         )
-        print(f"       Assigned {test_matched} videos to held-out test split via official list.")
+        video_to_split.update(train_val_split)
     else:
         print("\n[INFO] Official Celeb-DF testing-video list not provided locally.")
         print("       Using per-video stratified random splitting.")
         print("       Note: Random video-level split is not equivalent to the official Celeb-DF test benchmark protocol.")
+        split_records = [(vid_id, lbl) for vid_id, _, lbl, _ in video_records]
         video_to_split = split_videos_stratified(
             video_records=split_records,
             val_fraction=val_fraction,
@@ -420,7 +613,7 @@ def run_preprocessing(
     face_cascade = None if no_face_detect else get_face_cascade()
     meta_rows: List[Dict] = []
 
-    for video_id, label, video_path in video_records:
+    for video_id, folder_cat, label, video_path in video_records:
         video_split = video_to_split.get(video_id, "train")
 
         clips = extract_clips_from_video(
