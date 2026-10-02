@@ -107,11 +107,13 @@ data/raw/
 
 ### Official Test-List Label Convention & Strict Check
 The official Celeb-DF v2 `List_of_testing_videos.txt` lists videos with numeric labels:
-- Official list convention: `1 = real`, `0 = fake`
+- Official list convention assumption: `1 = real`, `0 = fake`
 - This project's internal convention: `0 = real`, `1 = fake`
 
+> **Unverified Assumption Notice**: The assumption that the official Celeb-DF v2 testing list uses `1 = real` and `0 = fake` is an **unverified assumption until checked against the real file**.
+
 **Why a strict check exists:**
-To prevent inverted evaluation metrics or silent label corruption, `preprocess.py` explicitly converts official test-list labels via `convert_official_list_label_to_project_label` and cross-references each line against the folder-derived class (`Celeb-real` / `YouTube-real` vs `Celeb-synthesis`). If any mismatch or missing file occurs, parsing halts immediately with a clear `ValueError` specifying the exact line number. Labels are never derived solely from numeric columns without folder verification.
+Because this mapping is an unverified assumption until the genuine dataset is inspected on disk, the parser is built to fail loudly if this assumption is incorrect. `preprocess.py` maps official test-list labels via `convert_official_list_label_to_project_label` and strictly cross-references each entry against the folder-derived class (`Celeb-real` / `YouTube-real` for real vs `Celeb-synthesis` for fake). If any mismatch, unexpected numeric value, or missing video occurs, parsing halts immediately with a clear `ValueError` detailing the exact line number. Labels are never inferred from numeric columns alone without folder verification.
 
 ---
 
