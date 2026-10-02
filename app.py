@@ -429,50 +429,58 @@ if analyze_clicked and target_video_path:
     verdict = result.verdict
     num_clips = result.clips_analyzed
 
-    if verdict == "FAKE":
-        card_class = "result-card-fake"
-        verdict_icon = "⚠️"
-        verdict_text = "FAKE DETECTED"
+    if num_clips == 0 or verdict == "UNKNOWN":
+        st.warning(
+            "⚠️ **Could not extract valid clips from the video.**\n\n"
+            "This can occur if the video is too short (fewer than 10 frames), "
+            "empty/corrupted, or if no faces were detected in the frames. "
+            "Please ensure the video has sufficient duration and clearly visible faces."
+        )
     else:
-        card_class = "result-card-real"
-        verdict_icon = "✓"
-        verdict_text = "REAL VIDEO"
+        if verdict == "FAKE":
+            card_class = "result-card-fake"
+            verdict_icon = "⚠️"
+            verdict_text = "FAKE DETECTED"
+        else:
+            card_class = "result-card-real"
+            verdict_icon = "✓"
+            verdict_text = "REAL VIDEO"
 
-    st.markdown(
-        f"""
-        <div class="result-card {card_class}">
-            <div class="verdict-title">{verdict_icon} {verdict_text}</div>
-            <div>
-                <span class="metric-chip">Probability of Fake: <b>{p_fake * 100:.1f}%</b></span>
-                <span class="metric-chip">Probability of Real: <b>{p_real * 100:.1f}%</b></span>
-                <span class="metric-chip">Clips Analysed: <b>{num_clips}</b></span>
-                <span class="metric-chip">Decision Cutoff: <b>{threshold:.2f}</b></span>
+        st.markdown(
+            f"""
+            <div class="result-card {card_class}">
+                <div class="verdict-title">{verdict_icon} {verdict_text}</div>
+                <div>
+                    <span class="metric-chip">Probability of Fake: <b>{p_fake * 100:.1f}%</b></span>
+                    <span class="metric-chip">Probability of Real: <b>{p_real * 100:.1f}%</b></span>
+                    <span class="metric-chip">Clips Analysed: <b>{num_clips}</b></span>
+                    <span class="metric-chip">Decision Cutoff: <b>{threshold:.2f}</b></span>
+                </div>
             </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+            """,
+            unsafe_allow_html=True,
+        )
 
-    # -------------------------------------------------------------------------
-    # Clean Probability Visualization Bar
-    # -------------------------------------------------------------------------
-    st.markdown("#### Probability Distribution")
-    real_pct = max(0.0, min(100.0, p_real * 100.0))
-    fake_pct = max(0.0, min(100.0, p_fake * 100.0))
+        # -------------------------------------------------------------------------
+        # Clean Probability Visualization Bar
+        # -------------------------------------------------------------------------
+        st.markdown("#### Probability Distribution")
+        real_pct = max(0.0, min(100.0, p_real * 100.0))
+        fake_pct = max(0.0, min(100.0, p_fake * 100.0))
 
-    st.markdown(
-        f"""
-        <div class="prob-bar-container">
-            <div class="prob-bar-real" style="width: {real_pct:.1f}%;">
-                REAL {real_pct:.1f}%
+        st.markdown(
+            f"""
+            <div class="prob-bar-container">
+                <div class="prob-bar-real" style="width: {real_pct:.1f}%;">
+                    REAL {real_pct:.1f}%
+                </div>
+                <div class="prob-bar-fake" style="width: {fake_pct:.1f}%;">
+                    FAKE {fake_pct:.1f}%
+                </div>
             </div>
-            <div class="prob-bar-fake" style="width: {fake_pct:.1f}%;">
-                FAKE {fake_pct:.1f}%
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+            """,
+            unsafe_allow_html=True,
+        )
 
     # Individual clip breakdown
     if result.clip_probabilities:

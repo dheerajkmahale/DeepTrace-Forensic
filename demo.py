@@ -224,7 +224,9 @@ def run_demo(
     test_fake = meta_df[(meta_df["split"] == "test") & (meta_df["label"] == 1)]
     if len(test_fake) > 0:
         fake_sample_name = test_fake["video"].iloc[0]
-        fake_sample_path = os.path.join(raw_dir, "fake", fake_sample_name)
+        cand1 = os.path.join(raw_dir, fake_sample_name)
+        cand2 = os.path.join(raw_dir, "fake", fake_sample_name)
+        fake_sample_path = cand1 if os.path.exists(cand1) else cand2
     else:
         fake_sample_path = os.path.join(raw_dir, "fake", "synth_fake_00.mp4")
 
@@ -246,7 +248,9 @@ def run_demo(
     test_real = meta_df[(meta_df["split"] == "test") & (meta_df["label"] == 0)]
     if len(test_real) > 0:
         real_sample_name = test_real["video"].iloc[0]
-        real_sample_path = os.path.join(raw_dir, "real", real_sample_name)
+        cand1 = os.path.join(raw_dir, real_sample_name)
+        cand2 = os.path.join(raw_dir, "real", real_sample_name)
+        real_sample_path = cand1 if os.path.exists(cand1) else cand2
     else:
         real_sample_path = os.path.join(raw_dir, "real", "synth_real_00.mp4")
 

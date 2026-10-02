@@ -13,8 +13,14 @@ Tests cover:
 import math
 import os
 import shutil
+import sys
 import tempfile
 import unittest
+
+# Ensure project root is in sys.path for direct pytest execution
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 import numpy as np
 import pandas as pd
