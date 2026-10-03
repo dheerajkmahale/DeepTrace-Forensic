@@ -21,6 +21,56 @@ from preprocess import center_crop_and_resize, crop_face_with_margin, get_face_c
 from theme import THEME
 
 
+def html_block(html_str: str) -> str:
+    """Format an HTML string safely for Streamlit markdown rendering.
+
+    Guarantees:
+    - Strips leading and trailing whitespace from every line (no line starts with 4+ spaces).
+    - Discards empty or whitespace-only lines (no blank lines).
+    - Prevents CommonMark from mistakenly interpreting indented HTML as preformatted code blocks.
+    """
+    if not html_str:
+        return ""
+    lines = [line.strip() for line in html_str.splitlines() if line.strip()]
+    return "\n".join(lines)
+
+
+def callout_info(msg: str) -> str:
+    """Render a styled info callout within the Ultraviolet Forensics palette."""
+    return html_block(f"""
+        <div style="background: {THEME['panel_dark']}; border-left: 4px solid {THEME['primary_accent']}; padding: 12px 16px; border-radius: 6px; margin: 10px 0; color: {THEME['text_primary']};">
+            <span style="color: {THEME['primary_accent']}; font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em;">INFO</span> &nbsp; {msg}
+        </div>
+    """)
+
+
+def callout_warning(msg: str) -> str:
+    """Render a styled warning callout within the Ultraviolet Forensics palette."""
+    return html_block(f"""
+        <div style="background: {THEME['panel_dark']}; border-left: 4px solid {THEME['inconclusive']}; padding: 12px 16px; border-radius: 6px; margin: 10px 0; color: {THEME['text_primary']};">
+            <span style="color: {THEME['inconclusive']}; font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em;">NOTICE</span> &nbsp; {msg}
+        </div>
+    """)
+
+
+def callout_error(msg: str) -> str:
+    """Render a styled error callout within the Ultraviolet Forensics palette."""
+    return html_block(f"""
+        <div style="background: {THEME['panel_dark']}; border-left: 4px solid {THEME['manipulated']}; padding: 12px 16px; border-radius: 6px; margin: 10px 0; color: {THEME['text_primary']};">
+            <span style="color: {THEME['manipulated']}; font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em;">ERROR</span> &nbsp; {msg}
+        </div>
+    """)
+
+
+def callout_success(msg: str) -> str:
+    """Render a styled success callout within the Ultraviolet Forensics palette."""
+    return html_block(f"""
+        <div style="background: {THEME['panel_dark']}; border-left: 4px solid {THEME['authentic']}; padding: 12px 16px; border-radius: 6px; margin: 10px 0; color: {THEME['text_primary']};">
+            <span style="color: {THEME['authentic']}; font-weight: bold; font-size: 0.85rem; letter-spacing: 0.05em;">VERIFIED</span> &nbsp; {msg}
+        </div>
+    """)
+
+
 def get_git_commit(cwd: Optional[str] = None) -> str:
     """Retrieve current short git commit hash or 'unknown' if not in a git repo."""
     try:
@@ -60,7 +110,7 @@ def compute_verdict(
     if low_band <= p_fake <= high_band:
         verdict = "INCONCLUSIVE"
         label = "INCONCLUSIVE"
-        icon = "⚡"
+        icon = "~"
         status = "inconclusive"
         color = THEME["inconclusive"]  # Gold (#FFC247)
         confidence = (
@@ -70,7 +120,7 @@ def compute_verdict(
     elif p_fake >= threshold:
         verdict = "FAKE"
         label = "MANIPULATED"
-        icon = "⚠️"
+        icon = "!"
         status = "fake"
         color = THEME["manipulated"]  # Vermilion (#FF5A36)
         if p_fake >= 0.85:
@@ -230,8 +280,8 @@ def build_html_report(analysis_data: Dict[str, Any]) -> str:
 </head>
 <body>
     <div class="report-box">
-        <h1>🔮 Forensic Video Analysis Report</h1>
-        <div class="subtitle">Ultraviolet Deepfake Manipulation Diagnostic Assessment</div>
+        <h1>Forensic Video Analysis Report</h1>
+        <div class="subtitle">Spatio-temporal manipulation diagnostic assessment</div>
 
         {proto_banner}
 

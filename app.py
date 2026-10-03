@@ -1,7 +1,7 @@
 """Ultraviolet Forensics Deepfake Detection Streamlit Application.
 
 Interactive web application for spatio-temporal deepfake analysis featuring:
-- Ultraviolet Forensics cyber visual aesthetic (zero black, blue, or green)
+- Ultraviolet Forensics visual aesthetic (zero black, blue, or green)
 - Prototype Model and Real Experiment Model selection
 - Single video analysis with staged telemetry and evidence inspection
 - Batch evaluation with resilient failure isolation
@@ -27,9 +27,14 @@ from ui_helpers import (
     build_html_report,
     build_json_report,
     build_probability_gauge,
+    callout_error,
+    callout_info,
+    callout_success,
+    callout_warning,
     compute_verdict,
     extract_clips_with_diagnostics,
     get_git_commit,
+    html_block,
 )
 from ui_styles import APP_LOGO_SVG, FORENSIC_THEME_CSS, PIPELINE_FLOW_HTML
 
@@ -37,14 +42,14 @@ from ui_styles import APP_LOGO_SVG, FORENSIC_THEME_CSS, PIPELINE_FLOW_HTML
 # Page Configuration
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Deepfake Detector | Ultraviolet Forensics",
+    page_title="Deepfake Detector | Forensic Analysis",
     page_icon="🔮",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 # Apply Ultraviolet Forensics Theme Styling
-st.markdown(FORENSIC_THEME_CSS, unsafe_allow_html=True)
+st.markdown(html_block(FORENSIC_THEME_CSS), unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
 # Session State Initialization
@@ -81,7 +86,10 @@ prototype_model_available = os.path.exists(PROTOTYPE_MODEL_PATH)
 # Sidebar: System Controls & Model Selection
 # -----------------------------------------------------------------------------
 with st.sidebar:
-    st.markdown("### ⚙️ System Configuration")
+    st.markdown(
+        html_block("<h3 style='margin-top:0; color:#F6EEFF;'>Configuration</h3>"),
+        unsafe_allow_html=True,
+    )
 
     # Honest model selector: disable Real Experiment if file is missing
     model_choices = ["Prototype Model (outputs/demo/best_model.keras)"]
@@ -98,10 +106,12 @@ with st.sidebar:
     )
 
     if "Unavailable" in selected_choice:
-        st.warning(
-            "⚠️ Real experiment model (`outputs/best_model.keras`) is not available on disk. "
-            "Please train on Celeb-DF v2 using `python train.py` first. Reverting to Prototype Model.",
-            icon="ℹ️",
+        st.markdown(
+            callout_warning(
+                "Real experiment model (outputs/best_model.keras) is not available on disk. "
+                "Please train on Celeb-DF v2 using python train.py first. Reverting to Prototype Model."
+            ),
+            unsafe_allow_html=True,
         )
         selected_model_path = PROTOTYPE_MODEL_PATH
         is_synthetic = True
@@ -115,21 +125,28 @@ with st.sidebar:
     # Provenance Badge in Ultraviolet Theme
     if is_synthetic:
         st.markdown(
-            f'<div style="background: rgba(255, 194, 71, 0.15); border: 1px solid {THEME["inconclusive"]}; '
-            f'border-radius: 6px; padding: 6px 10px; font-size: 0.8rem; color: {THEME["inconclusive"]}; text-align: center; font-weight: 600;">'
-            'MODE: PROTOTYPE (SYNTHETIC)</div>',
+            html_block(
+                f'<div style="background: rgba(255, 194, 71, 0.15); border: 1px solid {THEME["inconclusive"]}; '
+                f'border-radius: 6px; padding: 6px 10px; font-size: 0.8rem; color: {THEME["inconclusive"]}; text-align: center; font-weight: 600;">'
+                'MODE: PROTOTYPE (SYNTHETIC)</div>'
+            ),
             unsafe_allow_html=True,
         )
     else:
         st.markdown(
-            f'<div style="background: rgba(196, 161, 255, 0.15); border: 1px solid {THEME["authentic"]}; '
-            f'border-radius: 6px; padding: 6px 10px; font-size: 0.8rem; color: {THEME["authentic"]}; text-align: center; font-weight: 600;">'
-            'MODE: REAL EXPERIMENT</div>',
+            html_block(
+                f'<div style="background: rgba(196, 161, 255, 0.15); border: 1px solid {THEME["authentic"]}; '
+                f'border-radius: 6px; padding: 6px 10px; font-size: 0.8rem; color: {THEME["authentic"]}; text-align: center; font-weight: 600;">'
+                'MODE: REAL EXPERIMENT</div>'
+            ),
             unsafe_allow_html=True,
         )
 
     st.markdown("---")
-    st.markdown("#### 🔬 Threshold & Calibration")
+    st.markdown(
+        html_block("<h4 style='color:#F6EEFF; margin-bottom: 8px;'>Threshold & Calibration</h4>"),
+        unsafe_allow_html=True,
+    )
 
     threshold = st.slider(
         "Decision Threshold",
@@ -137,7 +154,7 @@ with st.sidebar:
         max_value=0.90,
         value=0.50,
         step=0.05,
-        help="Videos with manipulation probability ≥ threshold are classified as MANIPULATED.",
+        help="Videos with manipulation probability >= threshold are classified as MANIPULATED.",
     )
 
     inconclusive_range = st.slider(
@@ -150,7 +167,10 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    st.markdown("#### 👤 Face Extraction Mode")
+    st.markdown(
+        html_block("<h4 style='color:#F6EEFF; margin-bottom: 8px;'>Face Extraction Mode</h4>"),
+        unsafe_allow_html=True,
+    )
 
     no_face_detect = st.toggle(
         "Center-crop Fallback / Synthetic Mode",
@@ -162,31 +182,30 @@ with st.sidebar:
     )
 
     if no_face_detect:
-        st.caption("ℹ️ Center-crop active. Optimal for synthetic test patterns.")
+        st.caption("Center-crop active. Optimal for synthetic test patterns.")
     else:
-        st.caption("👤 Haar frontal cascade active. Detects and tracks faces across frames.")
+        st.caption("Haar frontal cascade active. Detects and tracks faces across frames.")
 
     st.markdown("---")
-    if st.button("🗑️ Clear Analysis History", use_container_width=True):
+    if st.button("Clear Analysis History", use_container_width=True):
         st.session_state.analysis_history = []
         st.session_state.latest_analysis = None
         st.session_state.batch_results = []
-        st.success("Session history cleared!")
         st.rerun()
 
 # -----------------------------------------------------------------------------
 # Main Header & Status Chips
 # -----------------------------------------------------------------------------
 st.markdown(
-    f"""
+    html_block(f"""
     <div class="forensic-title-container">
         {APP_LOGO_SVG}
         <span class="glitch-title">Deepfake Detector</span>
     </div>
     <div class="forensic-subtitle">
-        Ultraviolet Forensics Spatio-Temporal Video Manipulation Analysis System
+        Spatio-temporal video manipulation analysis
     </div>
-    """,
+    """),
     unsafe_allow_html=True,
 )
 
@@ -196,7 +215,7 @@ model_chip_name = "demo/best_model" if is_synthetic else "outputs/best_model"
 model_chip_color = "dot-gold" if is_synthetic else "dot-lilac"
 
 st.markdown(
-    f"""
+    html_block(f"""
     <div class="status-chips-container">
         <div class="status-chip">
             <span class="status-chip-dot {model_chip_color}"></span>
@@ -208,7 +227,7 @@ st.markdown(
         </div>
         <div class="status-chip">
             <span class="status-chip-dot dot-uv"></span>
-            <span>Sequence: <b>10 frames @ 128×128</b></span>
+            <span>Sequence: <b>10 frames @ 128x128</b></span>
         </div>
         <div class="status-chip">
             <span class="status-chip-dot dot-lilac"></span>
@@ -219,17 +238,17 @@ st.markdown(
             <span>Git: <code>{git_commit_short}</code></span>
         </div>
     </div>
-    """,
+    """),
     unsafe_allow_html=True,
 )
 
 # Persistent Prototype Banner (Mandatory Honesty Rule)
 if is_synthetic:
     st.markdown(
-        """
+        html_block("""
         <div class="prototype-warning-banner">
             <div class="prototype-warning-header">
-                <span>⚠️</span> Prototype model trained on synthetic data. Results on real face videos are NOT meaningful.
+                <span>NOTICE:</span> Prototype model trained on synthetic data. Results on real face videos are NOT meaningful.
             </div>
             <p class="prototype-warning-body">
                 This interface demonstrates the end-to-end video decoding, temporal frame sampling, facial region cropping,
@@ -238,7 +257,7 @@ if is_synthetic:
                 <b>not validated deepfake detection accuracy</b>.
             </p>
         </div>
-        """,
+        """),
         unsafe_allow_html=True,
     )
 
@@ -247,12 +266,12 @@ if is_synthetic:
 # -----------------------------------------------------------------------------
 tab_analyze, tab_batch, tab_history, tab_results, tab_how, tab_about = st.tabs(
     [
-        "🔍 Analyze",
-        "📁 Batch",
-        "📜 History",
-        "📊 Model & Results",
-        "⚙️ How It Works",
-        "ℹ️ About & Limitations",
+        "Analyze",
+        "Batch",
+        "History",
+        "Model & Results",
+        "How It Works",
+        "About & Limitations",
     ]
 )
 
@@ -260,7 +279,10 @@ tab_analyze, tab_batch, tab_history, tab_results, tab_how, tab_about = st.tabs(
 # TAB 1: ANALYZE (Single Video Evaluation)
 # =============================================================================
 with tab_analyze:
-    st.markdown("### 🎬 Video Manipulation Analysis")
+    st.markdown(
+        html_block("<h3 style='color:#F6EEFF; margin-top:0;'>Video Manipulation Analysis</h3>"),
+        unsafe_allow_html=True,
+    )
 
     input_col, preview_col = st.columns([1.1, 0.9])
     target_video_path = None
@@ -287,9 +309,9 @@ with tab_analyze:
             )
             if uploaded_file is not None:
                 if uploaded_file.size == 0:
-                    st.error("Uploaded file is empty (0 bytes). Please upload a valid video file.")
+                    st.markdown(callout_error("Uploaded file is empty (0 bytes)."), unsafe_allow_html=True)
                 elif uploaded_file.size > 50 * 1024 * 1024:
-                    st.error("File exceeds maximum upload size (50MB). Please select a shorter video.")
+                    st.markdown(callout_error("File exceeds maximum upload size (50MB). Please select a shorter video."), unsafe_allow_html=True)
                 else:
                     tfile = tempfile.NamedTemporaryFile(delete=False, suffix=f"_{uploaded_file.name}")
                     tfile.write(uploaded_file.getbuffer())
@@ -298,52 +320,58 @@ with tab_analyze:
                     target_video_path = tfile.name
                     target_video_name = uploaded_file.name
                     is_temp_file = True
-                    st.success(f"File staged: `{target_video_name}` ({uploaded_file.size / 1024:.1f} KB)")
+                    st.markdown(
+                        callout_info(f"File staged: {target_video_name} ({uploaded_file.size / 1024:.1f} KB)"),
+                        unsafe_allow_html=True,
+                    )
         elif preset_choice == "Preset: Synthetic Fake Sample (synth_fake_00.mp4)":
             sample_p = "data/demo/raw/fake/synth_fake_00.mp4"
             if os.path.exists(sample_p):
                 target_video_path = sample_p
                 target_video_name = "synth_fake_00.mp4 (Synthetic FAKE Sample)"
-                st.info(f"Loaded preset: `{target_video_name}`")
+                st.markdown(callout_info(f"Loaded preset: {target_video_name}"), unsafe_allow_html=True)
             else:
-                st.error(f"Preset file not found at `{sample_p}`. Run `python demo.py` first.")
+                st.markdown(callout_error(f"Preset file not found at {sample_p}. Run python demo.py first."), unsafe_allow_html=True)
         else:
             sample_p = "data/demo/raw/real/synth_real_15.mp4"
             if os.path.exists(sample_p):
                 target_video_path = sample_p
                 target_video_name = "synth_real_15.mp4 (Synthetic REAL Sample)"
-                st.info(f"Loaded preset: `{target_video_name}`")
+                st.markdown(callout_info(f"Loaded preset: {target_video_name}"), unsafe_allow_html=True)
             else:
-                st.error(f"Preset file not found at `{sample_p}`. Run `python demo.py` first.")
+                st.markdown(callout_error(f"Preset file not found at {sample_p}. Run python demo.py first."), unsafe_allow_html=True)
 
         analyze_button = st.button(
-            "⚡ Run Forensic Analysis",
+            "Run Forensic Analysis",
             type="primary",
             disabled=(target_video_path is None or not os.path.exists(selected_model_path)),
             use_container_width=True,
         )
 
     with preview_col:
-        st.markdown("#### Video Preview & Scanner")
+        st.markdown(
+            html_block("<h4 style='color:#F6EEFF;'>Video Preview & Scanner</h4>"),
+            unsafe_allow_html=True,
+        )
         if target_video_path and os.path.exists(target_video_path):
             st.markdown(
-                '<div class="video-preview-wrapper"><div class="scanner-overlay"></div>',
+                html_block('<div class="video-preview-wrapper"><div class="scanner-overlay"></div>'),
                 unsafe_allow_html=True,
             )
             try:
                 st.video(target_video_path)
             except Exception:
                 st.caption("Video format cannot be rendered directly in browser; analysis will proceed.")
-            st.markdown("</div>", unsafe_allow_html=True)
+            st.markdown(html_block("</div>"), unsafe_allow_html=True)
         else:
             st.markdown(
-                f"""
+                html_block(f"""
                 <div style="border: 2px dashed {THEME['panel_border']}; border-radius: 12px; padding: 48px;
                             text-align: center; color: {THEME['text_muted']}; background: {THEME['bg_dark']};">
-                    <div style="font-size: 2rem; margin-bottom: 8px;">🔮</div>
+                    <div style="font-size: 1.5rem; margin-bottom: 8px;">[Preview]</div>
                     Select or upload a video file to activate forensic preview.
                 </div>
-                """,
+                """),
                 unsafe_allow_html=True,
             )
 
@@ -354,16 +382,16 @@ with tab_analyze:
 
         try:
             with status_box:
-                st.write("1. 📥 Decoding video stream and inspecting headers...")
+                st.write("1. Decoding video stream and inspecting headers...")
                 time.sleep(0.15)
 
-                st.write("2. 🎞️ Extracting 3 uniform temporal segments (10 frames each)...")
+                st.write("2. Extracting 3 uniform temporal segments (10 frames each)...")
                 time.sleep(0.15)
 
                 if no_face_detect:
-                    st.write("3. ✂️ Performing center-crop spatial normalization (Synthetic mode)...")
+                    st.write("3. Performing center-crop spatial normalization (Synthetic mode)...")
                 else:
-                    st.write("3. 👤 Detecting facial regions using OpenCV Haar cascade with 25% margin...")
+                    st.write("3. Detecting facial regions using OpenCV Haar cascade with 25% margin...")
                 time.sleep(0.15)
 
                 clips_arr, err_reason, diag = extract_clips_with_diagnostics(
@@ -378,39 +406,45 @@ with tab_analyze:
                 if err_reason is not None or clips_arr is None or len(clips_arr) == 0:
                     status_box.update(label="Forensic extraction halted", state="error", expanded=True)
                     if err_reason == "empty file":
-                        st.error("Uploaded video file is empty (0 bytes).")
+                        st.markdown(callout_error("Uploaded video file is empty (0 bytes)."), unsafe_allow_html=True)
                     elif err_reason == "too short":
-                        st.error(
-                            f"Video duration too short: contains fewer than 10 frames "
-                            f"(total: {diag.get('total_frames', 'N/A')}). Minimum 10 frames required."
+                        st.markdown(
+                            callout_error(
+                                f"Video duration too short: contains fewer than 10 frames "
+                                f"(total: {diag.get('total_frames', 'N/A')}). Minimum 10 frames required."
+                            ),
+                            unsafe_allow_html=True,
                         )
                     elif err_reason == "no face detected":
-                        st.error(
-                            "No human faces detected by the OpenCV Haar cascade in any sampled frames. "
-                            "Ensure the face is clearly visible, or toggle 'Center-crop fallback' in the sidebar if testing non-face videos."
+                        st.markdown(
+                            callout_error(
+                                "No human faces detected by the OpenCV Haar cascade in any sampled frames. "
+                                "Ensure the face is clearly visible, or toggle Center-crop fallback in the sidebar if testing non-face videos."
+                            ),
+                            unsafe_allow_html=True,
                         )
                     elif err_reason == "unreadable":
-                        st.error("Unable to decode video stream. File may be corrupted or using an unsupported codec.")
+                        st.markdown(callout_error("Unable to decode video stream. File may be corrupted or using an unsupported codec."), unsafe_allow_html=True)
                     else:
-                        st.error(f"Video extraction error: {err_reason}")
+                        st.markdown(callout_error(f"Video extraction error: {err_reason}"), unsafe_allow_html=True)
                 else:
-                    st.write(f"4. 🧠 Loading neural network checkpoint: `{selected_model_path}`...")
+                    st.write(f"4. Loading neural network checkpoint: {selected_model_path}...")
                     model = load_detection_model(selected_model_path)
 
-                    st.write(f"5. ⚡ Executing spatio-temporal inference on tensor shape {clips_arr.shape}...")
+                    st.write(f"5. Executing spatio-temporal inference on tensor shape {clips_arr.shape}...")
                     predictions = model.predict(clips_arr, verbose=0).flatten()
 
                     p_fake = float(np.mean(predictions))
                     clip_probs = [float(p) for p in predictions]
 
-                    st.write("6. 📊 Computing calibrated verdict and diagnostic telemetry...")
+                    st.write("6. Computing calibrated verdict and diagnostic telemetry...")
                     v_info = compute_verdict(
                         p_fake=p_fake,
                         threshold=threshold,
                         inconclusive_band=inconclusive_range,
                     )
                     time.sleep(0.15)
-                    status_box.update(label="Forensic Analysis Completed!", state="complete", expanded=False)
+                    status_box.update(label="Forensic Analysis Completed", state="complete", expanded=False)
 
                     # Store in session state
                     analysis_record = {
@@ -463,7 +497,7 @@ with tab_analyze:
         headline_class = f"verdict-headline-{v_info['status']}"
 
         st.markdown(
-            f"""
+            html_block(f"""
             <div class="verdict-banner {banner_class}">
                 <div class="verdict-headline {headline_class}">
                     <span>{v_info['icon']}</span>
@@ -477,7 +511,7 @@ with tab_analyze:
                     {v_info['confidence']}
                 </div>
             </div>
-            """,
+            """),
             unsafe_allow_html=True,
         )
 
@@ -490,17 +524,20 @@ with tab_analyze:
                 inconclusive_low=rec["inconclusive_band"][0],
                 inconclusive_high=rec["inconclusive_band"][1],
             )
-            st.plotly_chart(gauge_fig, use_container_width=True)
+            st.plotly_chart(gauge_fig, use_container_width=True, config={"displayModeBar": False})
 
         with c_col:
             bar_fig = build_clips_bar_chart(
                 clip_probabilities=rec["clip_probabilities"],
                 threshold=rec["threshold"],
             )
-            st.plotly_chart(bar_fig, use_container_width=True)
+            st.plotly_chart(bar_fig, use_container_width=True, config={"displayModeBar": False})
 
         # Evidence Panel: Diagnostics and Face Crops
-        st.markdown("#### 🔬 Forensic Telemetry & Evidence")
+        st.markdown(
+            html_block("<h4 style='color:#F6EEFF; margin-top: 24px;'>Forensic Telemetry & Evidence</h4>"),
+            unsafe_allow_html=True,
+        )
 
         e_col1, e_col2, e_col3, e_col4 = st.columns(4)
         f_stats = rec["face_stats"]
@@ -514,20 +551,25 @@ with tab_analyze:
             st.metric(label="Face Detection Rate", value=f"{det_rate:.1f}%")
         with e_col4:
             fallback = f_stats.get("fallback_used", False)
-            fallback_text = "Activated ⚠️" if fallback else "None (Exact)"
+            fallback_text = "Fallback Used" if fallback else "Exact Cascade"
             st.metric(label="Fallback Status", value=fallback_text)
 
         if fallback and not no_face_detect:
-            st.warning(
-                "⚠️ Face detection fallback was engaged for one or more frames (face tracker interpolation). "
-                "Confidence may be slightly impacted by facial bounding box approximation.",
-                icon="⚠️",
+            st.markdown(
+                callout_warning(
+                    "Face detection fallback was engaged for one or more frames (face tracker interpolation). "
+                    "Confidence may be slightly impacted by facial bounding box approximation."
+                ),
+                unsafe_allow_html=True,
             )
 
         # Face Crop Strip
         crops = rec.get("sample_crops", [])
         if crops:
-            st.markdown("##### Extracted Face Crops Fed to Model")
+            st.markdown(
+                html_block("<h5 style='color:#F6EEFF; margin-top: 18px;'>Extracted Face Crops Fed to Model</h5>"),
+                unsafe_allow_html=True,
+            )
             crop_cols = st.columns(min(len(crops), 6))
             for i, crop in enumerate(crops[:6]):
                 with crop_cols[i]:
@@ -535,7 +577,10 @@ with tab_analyze:
 
         # Report Downloads
         st.markdown("---")
-        st.markdown("#### 📄 Forensic Audit Report Export")
+        st.markdown(
+            html_block("<h4 style='color:#F6EEFF;'>Forensic Audit Report Export</h4>"),
+            unsafe_allow_html=True,
+        )
         r_col1, r_col2 = st.columns(2)
 
         json_report_str = build_json_report(rec)
@@ -544,7 +589,7 @@ with tab_analyze:
 
         with r_col1:
             st.download_button(
-                label="📥 Download JSON Report",
+                label="Download JSON Report",
                 data=json_report_str,
                 file_name=f"forensic_report_{safe_name}.json",
                 mime="application/json",
@@ -553,7 +598,7 @@ with tab_analyze:
 
         with r_col2:
             st.download_button(
-                label="📄 Download HTML Report",
+                label="Download HTML Report",
                 data=html_report_str,
                 file_name=f"forensic_report_{safe_name}.html",
                 mime="text/html",
@@ -564,10 +609,16 @@ with tab_analyze:
 # TAB 2: BATCH (Multi-Video Processing)
 # =============================================================================
 with tab_batch:
-    st.markdown("### 📁 Batch Forensic Video Evaluation")
     st.markdown(
-        "Upload multiple video files to analyze sequentially. "
-        "Corrupted, short, or invalid files are isolated and logged without halting batch execution."
+        html_block("<h3 style='color:#F6EEFF; margin-top:0;'>Batch Forensic Video Evaluation</h3>"),
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        html_block(
+            f"<p style='color:{THEME['text_muted']};'>Upload multiple video files to analyze sequentially. "
+            "Corrupted, short, or invalid files are isolated and logged without halting batch execution.</p>"
+        ),
+        unsafe_allow_html=True,
     )
 
     batch_files = st.file_uploader(
@@ -578,7 +629,7 @@ with tab_batch:
     )
 
     run_batch_button = st.button(
-        "🚀 Process Batch Files",
+        "Process Batch Files",
         type="primary",
         disabled=(not batch_files or not os.path.exists(selected_model_path)),
     )
@@ -666,17 +717,20 @@ with tab_batch:
                         pass
 
         progress_bar.progress(1.0)
-        status_text.text("Batch processing complete!")
+        status_text.text("Batch processing complete")
         st.session_state.batch_results = batch_rows
 
     if st.session_state.batch_results:
-        st.markdown("#### Batch Processing Results")
+        st.markdown(
+            html_block("<h4 style='color:#F6EEFF;'>Batch Processing Results</h4>"),
+            unsafe_allow_html=True,
+        )
         batch_df = pd.DataFrame(st.session_state.batch_results)
         st.dataframe(batch_df, use_container_width=True)
 
         csv_data = batch_df.to_csv(index=False).encode("utf-8")
         st.download_button(
-            label="📥 Download Batch Results (CSV)",
+            label="Download Batch Results (CSV)",
             data=csv_data,
             file_name=f"batch_results_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
             mime="text/csv",
@@ -686,10 +740,15 @@ with tab_batch:
 # TAB 3: HISTORY (Session Audit Trail)
 # =============================================================================
 with tab_history:
-    st.markdown("### 📜 Session Analysis Audit Trail")
     st.markdown(
-        "Audit trail of all video analyses performed during this browser session. "
-        "<b>Privacy Note:</b> No video frames or media files are stored on disk or server storage.",
+        html_block("<h3 style='color:#F6EEFF; margin-top:0;'>Session Analysis Audit Trail</h3>"),
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        html_block(
+            f"<p style='color:{THEME['text_muted']};'>Audit trail of all video analyses performed during this browser session. "
+            "<b>Privacy Note:</b> No video frames or media files are stored on disk or server storage.</p>"
+        ),
         unsafe_allow_html=True,
     )
 
@@ -699,38 +758,47 @@ with tab_history:
 
         h_csv = hist_df.to_csv(index=False).encode("utf-8")
         st.download_button(
-            label="📥 Export Session History (CSV)",
+            label="Export Session History (CSV)",
             data=h_csv,
             file_name=f"analysis_history_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
             mime="text/csv",
         )
     else:
-        st.info("No analyses recorded in this session yet. Run an analysis in the 'Analyze' or 'Batch' tab.")
+        st.markdown(
+            callout_info("No analyses recorded in this session yet. Run an analysis in the Analyze or Batch tab."),
+            unsafe_allow_html=True,
+        )
 
 # =============================================================================
 # TAB 4: MODEL & RESULTS (Honest Experiment Reporting)
 # =============================================================================
 with tab_results:
-    st.markdown("### 📊 Benchmark Evaluation & Model Architecture")
+    st.markdown(
+        html_block("<h3 style='color:#F6EEFF; margin-top:0;'>Benchmark Evaluation & Model Architecture</h3>"),
+        unsafe_allow_html=True,
+    )
 
     metrics_path = "outputs/metrics.json"
     run_info_path = "outputs/run_info.json"
 
     # Strictly honest reporting: only read outputs/metrics.json if it genuinely exists
     if os.path.exists(metrics_path):
-        st.markdown("#### 🔬 Celeb-DF v2 Benchmark Results")
+        st.markdown(
+            html_block("<h4 style='color:#F6EEFF;'>Celeb-DF v2 Benchmark Results</h4>"),
+            unsafe_allow_html=True,
+        )
         try:
             import json
             with open(metrics_path, "r", encoding="utf-8") as f:
                 metrics_data = json.load(f)
             st.json(metrics_data)
         except Exception as e:
-            st.error(f"Error reading metrics file: {e}")
+            st.markdown(callout_error(f"Error reading metrics file: {e}"), unsafe_allow_html=True)
     else:
         st.markdown(
-            f"""
+            html_block(f"""
             <div class="glass-panel" style="border-left: 5px solid {THEME['primary_accent']};">
-                <h4 style="color: {THEME['primary_accent']}; margin-top: 0;">🔬 Celeb-DF v2 Benchmark Status</h4>
+                <h4 style="color: {THEME['primary_accent']}; margin-top: 0;">Celeb-DF v2 Benchmark Status</h4>
                 <p style="color: {THEME['text_primary']}; line-height: 1.5;">
                     <b>Real experiment not yet run.</b><br>
                     Official Celeb-DF v2 benchmark training and evaluation have not been executed on this machine.
@@ -741,25 +809,31 @@ with tab_results:
                     Expected benchmark data: 890 real videos, 5,639 fake videos, evaluated on the official 518-video test list.
                 </div>
             </div>
-            """,
+            """),
             unsafe_allow_html=True,
         )
 
     if os.path.exists(run_info_path):
-        st.markdown("#### 📋 Training Run Parameters")
+        st.markdown(
+            html_block("<h4 style='color:#F6EEFF;'>Training Run Parameters</h4>"),
+            unsafe_allow_html=True,
+        )
         try:
             import json
             with open(run_info_path, "r", encoding="utf-8") as f:
                 run_data = json.load(f)
             st.json(run_data)
         except Exception as e:
-            st.error(f"Error reading run_info file: {e}")
+            st.markdown(callout_error(f"Error reading run_info file: {e}"), unsafe_allow_html=True)
 
     # Check for ROC and Confusion Matrix plots
     cm_path = "outputs/confusion_matrix.png"
     roc_path = "outputs/roc_curve.png"
     if os.path.exists(cm_path) or os.path.exists(roc_path):
-        st.markdown("#### 📈 Benchmark Visualizations")
+        st.markdown(
+            html_block("<h4 style='color:#F6EEFF;'>Benchmark Visualizations</h4>"),
+            unsafe_allow_html=True,
+        )
         p_col1, p_col2 = st.columns(2)
         if os.path.exists(cm_path):
             with p_col1:
@@ -770,12 +844,15 @@ with tab_results:
 
     # Architecture Blueprint
     st.markdown("---")
-    st.markdown("#### 🧠 Spatio-Temporal CNN-LSTM Architecture Blueprint")
+    st.markdown(
+        html_block("<h4 style='color:#F6EEFF;'>Spatio-Temporal CNN-LSTM Architecture Blueprint</h4>"),
+        unsafe_allow_html=True,
+    )
 
     b_col1, b_col2 = st.columns(2)
     with b_col1:
         st.markdown(
-            f"""
+            html_block(f"""
             <div class="glass-panel">
                 <h5 style="color: {THEME['authentic']}; margin-top:0;">Spatial Feature Extractor (CNN)</h5>
                 <ul style="font-size: 0.88rem; color: {THEME['text_primary']}; line-height: 1.6;">
@@ -788,13 +865,13 @@ with tab_results:
                     <li><b>Projection:</b> <code>TimeDistributed(Flatten)</code> + <code>Dense(128, ReLU)</code></li>
                 </ul>
             </div>
-            """,
+            """),
             unsafe_allow_html=True,
         )
 
     with b_col2:
         st.markdown(
-            f"""
+            html_block(f"""
             <div class="glass-panel">
                 <h5 style="color: {THEME['manipulated']}; margin-top:0;">Temporal Sequence & Classification</h5>
                 <ul style="font-size: 0.88rem; color: {THEME['text_primary']}; line-height: 1.6;">
@@ -806,7 +883,7 @@ with tab_results:
                     <li><b>Optimizer:</b> Adam (learning_rate = 1e-4)</li>
                 </ul>
             </div>
-            """,
+            """),
             unsafe_allow_html=True,
         )
 
@@ -814,52 +891,55 @@ with tab_results:
 # TAB 5: HOW IT WORKS (Methodology & Pipeline Diagram)
 # =============================================================================
 with tab_how:
-    st.markdown("### ⚙️ How the Deepfake Detector Operates")
+    st.markdown(
+        html_block("<h3 style='color:#F6EEFF; margin-top:0;'>How the Deepfake Detector Operates</h3>"),
+        unsafe_allow_html=True,
+    )
 
     # Render Pipeline Flow Diagram
-    st.markdown(PIPELINE_FLOW_HTML, unsafe_allow_html=True)
+    st.markdown(html_block(PIPELINE_FLOW_HTML), unsafe_allow_html=True)
 
     h_col1, h_col2, h_col3 = st.columns(3)
 
     with h_col1:
         st.markdown(
-            f"""
+            html_block(f"""
             <div class="glass-panel">
-                <h5 style="color: {THEME['primary_accent']};">1. Uniform Sampling</h5>
+                <h5 style="color: {THEME['primary_accent']}; margin-top:0;">1. Uniform Sampling</h5>
                 <p style="font-size: 0.85rem; color: {THEME['text_muted']};">
                     Videos are partitioned into <code>clips_per_video = 3</code> non-overlapping segments.
                     Within each segment, 10 frames are sampled linearly across the duration.
                 </p>
             </div>
-            """,
+            """),
             unsafe_allow_html=True,
         )
 
     with h_col2:
         st.markdown(
-            f"""
+            html_block(f"""
             <div class="glass-panel">
-                <h5 style="color: {THEME['authentic']};">2. Facial Bounding Box</h5>
+                <h5 style="color: {THEME['authentic']}; margin-top:0;">2. Facial Bounding Box</h5>
                 <p style="font-size: 0.85rem; color: {THEME['text_muted']};">
                     OpenCV Haar cascade detects frontal facial features. An expanded 25% margin ensures
                     hairline, jawline, and boundary blending artifacts are fully enclosed.
                 </p>
             </div>
-            """,
+            """),
             unsafe_allow_html=True,
         )
 
     with h_col3:
         st.markdown(
-            f"""
+            html_block(f"""
             <div class="glass-panel">
-                <h5 style="color: {THEME['manipulated']};">3. Spatio-Temporal Hybrid</h5>
+                <h5 style="color: {THEME['manipulated']}; margin-top:0;">3. Spatio-Temporal Hybrid</h5>
                 <p style="font-size: 0.85rem; color: {THEME['text_muted']};">
                     Frame features extracted by the 4-block CNN are sequentially evaluated by the LSTM.
                     Clip scores are mean-aggregated to produce the video-level verdict.
                 </p>
             </div>
-            """,
+            """),
             unsafe_allow_html=True,
         )
 
@@ -867,10 +947,13 @@ with tab_how:
 # TAB 6: ABOUT & LIMITATIONS (Academic Transparency & Ethics)
 # =============================================================================
 with tab_about:
-    st.markdown("### ℹ️ About the Project, Limitations & Privacy")
+    st.markdown(
+        html_block("<h3 style='color:#F6EEFF; margin-top:0;'>About the Project, Limitations & Privacy</h3>"),
+        unsafe_allow_html=True,
+    )
 
     st.markdown(
-        f"""
+        html_block(f"""
         <div class="glass-panel">
             <h4 style="color: {THEME['primary_accent']}; margin-top: 0;">Forensic Limitations & Technical Disclosures</h4>
             <p style="font-size: 0.88rem; color: {THEME['text_primary']}; line-height: 1.6;">
@@ -887,14 +970,14 @@ with tab_about:
         </div>
 
         <div class="glass-panel" style="border-left: 5px solid {THEME['authentic']};">
-            <h4 style="color: {THEME['authentic']}; margin-top: 0;">🔒 Privacy & Ephemeral Data Processing</h4>
+            <h4 style="color: {THEME['authentic']}; margin-top: 0;">Privacy & Ephemeral Data Processing</h4>
             <p style="font-size: 0.88rem; color: {THEME['text_primary']}; line-height: 1.6;">
                 All video uploads are handled on this local machine. Uploaded files are written to ephemeral temporary buffers
                 and are <b>strictly deleted immediately following inference</b> in a guaranteed <code>finally:</code> block.
                 No videos or facial images are transmitted over external networks or permanently retained.
             </p>
         </div>
-        """,
+        """),
         unsafe_allow_html=True,
     )
 
@@ -902,11 +985,11 @@ with tab_about:
 # Footer
 # -----------------------------------------------------------------------------
 st.markdown(
-    f"""
+    html_block(f"""
     <div style="margin-top: 40px; padding-top: 16px; border-top: 1px solid {THEME['panel_border']};
                 text-align: center; font-size: 0.8rem; color: {THEME['text_muted']};">
         Deepfake Detector | Spatio-Temporal CNN-LSTM Architecture | Ultraviolet Forensics
     </div>
-    """,
+    """),
     unsafe_allow_html=True,
 )

@@ -37,16 +37,31 @@ FORENSIC_THEME_CSS = f"""
 }}
 
 /* Global Font and Base Overrides */
-html, body, [class*="css"], .stApp {{
+html, body, [class*="css"], .stApp, * {{
     font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
-    background-color: var(--bg-dark) !important;
-    color: var(--text-primary) !important;
+    background-color: var(--bg-dark);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased !important;
+    -moz-osx-font-smoothing: grayscale !important;
+    text-rendering: optimizeLegibility !important;
 }}
 
-code, kbd, samp, pre {{
+code, kbd, samp, pre,
+div[data-testid="stCodeBlock"],
+div[data-testid="stCodeBlock"] pre,
+div[data-testid="stCodeBlock"] code,
+div[data-testid="stCodeBlock"] span,
+div[data-testid="stCode"],
+.stCode {{
     font-family: 'JetBrains Mono', monospace !important;
     background-color: var(--panel-dark) !important;
-    color: var(--text-primary) !important;
+    color: var(--authentic-lilac) !important;
+    border: 1px solid var(--panel-border) !important;
+}}
+
+code {{
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
     border: 1px solid var(--panel-border) !important;
 }}
 
@@ -365,21 +380,71 @@ div.stButton > button[kind="secondary"]:hover, div.stDownloadButton > button:hov
     box-shadow: 0 0 12px rgba(139, 92, 246, 0.3);
 }}
 
-/* Sidebar Custom Styling */
-section[data-testid="stSidebar"] {{
+/* Sidebar Custom Styling (Plum panel color, not darker near-black) */
+section[data-testid="stSidebar"],
+section[data-testid="stSidebar"] > div,
+[data-testid="stSidebarContent"],
+[data-testid="stSidebarUserContent"],
+[data-testid="stSidebarNav"] {{
     background-color: var(--panel-dark) !important;
     border-right: 1px solid var(--panel-border) !important;
 }}
 
-/* File Uploader Customization (Eliminating Default Streamlit Styles) */
-section[data-testid="stFileUploadDropzone"] {{
+/* Custom Scrollbars */
+::-webkit-scrollbar {{
+    width: 8px !important;
+    height: 8px !important;
+    background: var(--bg-dark) !important;
+}}
+::-webkit-scrollbar-track {{
+    background: var(--bg-dark) !important;
+}}
+::-webkit-scrollbar-thumb {{
+    background: var(--panel-border) !important;
+    border-radius: 4px !important;
+}}
+::-webkit-scrollbar-thumb:hover {{
+    background: var(--primary-accent) !important;
+}}
+* {{
+    scrollbar-color: var(--panel-border) var(--bg-dark) !important;
+    scrollbar-width: thin !important;
+}}
+
+/* Dropdown and Selectbox Styling */
+div[data-baseweb="select"] > div {{
+    background-color: var(--panel-dark) !important;
+    border-color: var(--panel-border) !important;
+    color: var(--text-primary) !important;
+}}
+div[data-baseweb="popover"],
+div[data-baseweb="menu"],
+ul[role="listbox"] {{
+    background-color: var(--panel-dark) !important;
+    border: 1px solid var(--panel-border) !important;
+}}
+li[role="option"] {{
+    background-color: var(--panel-dark) !important;
+    color: var(--text-primary) !important;
+}}
+li[role="option"]:hover,
+li[role="option"][aria-selected="true"] {{
+    background-color: var(--panel-border) !important;
+    color: var(--text-primary) !important;
+}}
+
+/* File Uploader Customization */
+section[data-testid="stFileUploadDropzone"],
+div[data-testid="stFileUploaderDropzone"],
+div[data-testid="stFileUploader"] {{
     background-color: var(--panel-dark) !important;
     border: 2px dashed var(--panel-border) !important;
     color: var(--text-primary) !important;
     border-radius: 12px !important;
 }}
 
-section[data-testid="stFileUploadDropzone"]:hover {{
+section[data-testid="stFileUploadDropzone"]:hover,
+div[data-testid="stFileUploaderDropzone"]:hover {{
     border-color: var(--primary-accent) !important;
 }}
 
@@ -406,6 +471,51 @@ div[data-baseweb="slider"] div[data-testid="stSliderTrack"] > div {{
     outline-color: var(--primary-accent) !important;
     border-color: var(--primary-accent) !important;
     box-shadow: 0 0 0 1px var(--primary-accent) !important;
+}}
+
+/* Top Header Toolbar & Deploy Menu Area */
+header[data-testid="stHeader"] {{
+    background-color: var(--bg-dark) !important;
+}}
+header[data-testid="stHeader"] * {{
+    color: var(--text-muted) !important;
+}}
+div[data-testid="stDecoration"] {{
+    display: none !important;
+}}
+div[data-testid="stStatusWidget"] {{
+    background-color: var(--panel-dark) !important;
+    border: 1px solid var(--panel-border) !important;
+    color: var(--text-primary) !important;
+}}
+
+/* Toast Notifications */
+div[data-testid="stToast"] {{
+    background-color: var(--panel-dark) !important;
+    border: 1px solid var(--panel-border) !important;
+    color: var(--text-primary) !important;
+    box-shadow: 0 4px 16px rgba(42, 18, 72, 0.6) !important;
+}}
+div[data-testid="stToast"] * {{
+    color: var(--text-primary) !important;
+}}
+
+/* Plotly Chart Elements */
+.js-plotly-plot .plotly .modebar {{
+    background: transparent !important;
+}}
+.js-plotly-plot .plotly .modebar-btn path {{
+    fill: var(--primary-accent) !important;
+}}
+.js-plotly-plot .plotly .modebar-btn:hover path {{
+    fill: var(--authentic-lilac) !important;
+}}
+.hoverlayer .hovertext rect {{
+    fill: var(--panel-dark) !important;
+    stroke: var(--panel-border) !important;
+}}
+.hoverlayer .hovertext text {{
+    fill: var(--text-primary) !important;
 }}
 
 /* Progress Bar Accent */
@@ -454,43 +564,43 @@ APP_LOGO_SVG = f"""
 
 PIPELINE_FLOW_HTML = f"""
 <div style="background: {THEME['panel_dark']}; border: 1px solid {THEME['panel_border']}; border-radius: 14px; padding: 24px; margin-bottom: 24px;">
-    <h3 style="margin-top: 0; color: {THEME['primary_accent']}; font-size: 1.15rem; display: flex; align-items: center; gap: 8px;">
-        <span>🔬</span> End-to-End Spatio-Temporal Pipeline Architecture
+    <h3 style="margin-top: 0; color: {THEME['primary_accent']}; font-size: 1.15rem; font-weight: 700;">
+        End-to-End Spatio-Temporal Pipeline Architecture
     </h3>
     <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px;">
         <div style="flex: 1; min-width: 140px; background: {THEME['bg_dark']}; border: 1px solid {THEME['panel_border']}; border-radius: 10px; padding: 14px; text-align: center;">
-            <div style="font-size: 1.4rem;">🎬</div>
-            <div style="font-weight: 700; color: {THEME['text_primary']}; margin: 6px 0 2px 0; font-size: 0.88rem;">1. Video Input</div>
+            <div style="display: inline-block; width: 28px; height: 28px; line-height: 28px; border-radius: 50%; background: {THEME['primary_accent']}; color: {THEME['text_primary']}; font-weight: bold; font-size: 0.85rem; margin-bottom: 6px;">1</div>
+            <div style="font-weight: 700; color: {THEME['text_primary']}; margin: 2px 0; font-size: 0.88rem;">Video Input</div>
             <div style="font-size: 0.75rem; color: {THEME['text_muted']};">3 segments sampled uniformly</div>
         </div>
         <div style="color: {THEME['primary_accent']}; font-weight: bold; font-size: 1.2rem;">➔</div>
         <div style="flex: 1; min-width: 140px; background: {THEME['bg_dark']}; border: 1px solid {THEME['panel_border']}; border-radius: 10px; padding: 14px; text-align: center;">
-            <div style="font-size: 1.4rem;">👤</div>
-            <div style="font-weight: 700; color: {THEME['text_primary']}; margin: 6px 0 2px 0; font-size: 0.88rem;">2. Face Cascade</div>
+            <div style="display: inline-block; width: 28px; height: 28px; line-height: 28px; border-radius: 50%; background: {THEME['primary_accent']}; color: {THEME['text_primary']}; font-weight: bold; font-size: 0.85rem; margin-bottom: 6px;">2</div>
+            <div style="font-weight: 700; color: {THEME['text_primary']}; margin: 2px 0; font-size: 0.88rem;">Face Cascade</div>
             <div style="font-size: 0.75rem; color: {THEME['text_muted']};">Haar frontal detection + fallback</div>
         </div>
         <div style="color: {THEME['primary_accent']}; font-weight: bold; font-size: 1.2rem;">➔</div>
         <div style="flex: 1; min-width: 140px; background: {THEME['bg_dark']}; border: 1px solid {THEME['panel_border']}; border-radius: 10px; padding: 14px; text-align: center;">
-            <div style="font-size: 1.4rem;">✂️</div>
-            <div style="font-weight: 700; color: {THEME['text_primary']}; margin: 6px 0 2px 0; font-size: 0.88rem;">3. Spatial Crop</div>
-            <div style="font-size: 0.75rem; color: {THEME['text_muted']};">128×128 with 25% margin</div>
+            <div style="display: inline-block; width: 28px; height: 28px; line-height: 28px; border-radius: 50%; background: {THEME['primary_accent']}; color: {THEME['text_primary']}; font-weight: bold; font-size: 0.85rem; margin-bottom: 6px;">3</div>
+            <div style="font-weight: 700; color: {THEME['text_primary']}; margin: 2px 0; font-size: 0.88rem;">Spatial Crop</div>
+            <div style="font-size: 0.75rem; color: {THEME['text_muted']};">128x128 with 25% margin</div>
         </div>
         <div style="color: {THEME['primary_accent']}; font-weight: bold; font-size: 1.2rem;">➔</div>
         <div style="flex: 1; min-width: 140px; background: {THEME['bg_dark']}; border: 1px solid {THEME['panel_border']}; border-radius: 10px; padding: 14px; text-align: center;">
-            <div style="font-size: 1.4rem;">🧩</div>
-            <div style="font-weight: 700; color: {THEME['text_primary']}; margin: 6px 0 2px 0; font-size: 0.88rem;">4. CNN Feature</div>
+            <div style="display: inline-block; width: 28px; height: 28px; line-height: 28px; border-radius: 50%; background: {THEME['primary_accent']}; color: {THEME['text_primary']}; font-weight: bold; font-size: 0.85rem; margin-bottom: 6px;">4</div>
+            <div style="font-weight: 700; color: {THEME['text_primary']}; margin: 2px 0; font-size: 0.88rem;">CNN Feature</div>
             <div style="font-size: 0.75rem; color: {THEME['text_muted']};">4-block TimeDistributed CNN</div>
         </div>
         <div style="color: {THEME['primary_accent']}; font-weight: bold; font-size: 1.2rem;">➔</div>
         <div style="flex: 1; min-width: 140px; background: {THEME['bg_dark']}; border: 1px solid {THEME['panel_border']}; border-radius: 10px; padding: 14px; text-align: center;">
-            <div style="font-size: 1.4rem;">⏱️</div>
-            <div style="font-weight: 700; color: {THEME['text_primary']}; margin: 6px 0 2px 0; font-size: 0.88rem;">5. LSTM Modeling</div>
+            <div style="display: inline-block; width: 28px; height: 28px; line-height: 28px; border-radius: 50%; background: {THEME['primary_accent']}; color: {THEME['text_primary']}; font-weight: bold; font-size: 0.85rem; margin-bottom: 6px;">5</div>
+            <div style="font-weight: 700; color: {THEME['text_primary']}; margin: 2px 0; font-size: 0.88rem;">LSTM Modeling</div>
             <div style="font-size: 0.75rem; color: {THEME['text_muted']};">128-unit temporal recurrent layer</div>
         </div>
         <div style="color: {THEME['primary_accent']}; font-weight: bold; font-size: 1.2rem;">➔</div>
         <div style="flex: 1; min-width: 140px; background: {THEME['bg_dark']}; border: 1px solid {THEME['panel_border']}; border-radius: 10px; padding: 14px; text-align: center;">
-            <div style="font-size: 1.4rem;">📈</div>
-            <div style="font-weight: 700; color: {THEME['text_primary']}; margin: 6px 0 2px 0; font-size: 0.88rem;">6. P(manipulation)</div>
+            <div style="display: inline-block; width: 28px; height: 28px; line-height: 28px; border-radius: 50%; background: {THEME['primary_accent']}; color: {THEME['text_primary']}; font-weight: bold; font-size: 0.85rem; margin-bottom: 6px;">6</div>
+            <div style="font-weight: 700; color: {THEME['text_primary']}; margin: 2px 0; font-size: 0.88rem;">P(manipulation)</div>
             <div style="font-size: 0.75rem; color: {THEME['text_muted']};">Mean clip score + band filter</div>
         </div>
     </div>

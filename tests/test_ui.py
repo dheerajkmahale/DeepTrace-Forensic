@@ -25,7 +25,48 @@ from ui_helpers import (
     build_json_report,
     compute_verdict,
     get_git_commit,
+    html_block,
 )
+
+
+class TestHtmlBlockHelper:
+    """Unit tests for html_block() helper ensuring safe CommonMark rendering."""
+
+    def test_strips_leading_spaces_and_tabs(self):
+        """Ensure no line starts with 4+ spaces or tabs, preventing code block conversion."""
+        indented_html = "    <div class=\"test\">\n        <p>Text</p>\n    </div>"
+        cleaned = html_block(indented_html)
+        for line in cleaned.splitlines():
+            assert not line.startswith("    "), f"Line starts with 4+ spaces: '{line}'"
+            assert not line.startswith("\t"), f"Line starts with tab: '{line}'"
+            assert line == line.strip(), f"Line has leading/trailing whitespace: '{line}'"
+
+    def test_removes_all_blank_lines(self):
+        """Ensure all empty lines and whitespace-only lines are removed."""
+        html_with_blanks = "<div>\n\n   \n\t\n<p>Hello</p>\n\n</div>"
+        cleaned = html_block(html_with_blanks)
+        lines = cleaned.splitlines()
+        assert len(lines) == 3
+        for line in lines:
+            assert len(line.strip()) > 0, "Found blank line in output"
+
+    def test_handles_empty_or_none(self):
+        """Ensure empty strings or None produce an empty string without crashing."""
+        assert html_block("") == ""
+        assert html_block("   \n\n  ") == ""
+        assert html_block(None) == ""
+
+    def test_preserves_html_tags_and_content(self):
+        """Ensure tag structures and contents remain intact."""
+        raw = """
+        <div class="glitch-title">
+            Deepfake Detector
+        </div>
+        """
+        cleaned = html_block(raw)
+        assert '<div class="glitch-title">' in cleaned
+        assert "Deepfake Detector" in cleaned
+        assert "</div>" in cleaned
 
 
 class TestVerdictLogic:
@@ -48,7 +89,7 @@ class TestVerdictLogic:
         res = compute_verdict(p_fake=0.92, threshold=0.50, inconclusive_band=(0.40, 0.60))
         assert res["verdict"] == "FAKE"
         assert res["label"] == "MANIPULATED"
-        assert res["icon"] == "⚠️"
+        assert res["icon"] == "!"
         assert res["status"] == "fake"
         assert res["color"] == "#FF5A36"
         assert "manipulation" in res["confidence"].lower()
@@ -60,7 +101,7 @@ class TestVerdictLogic:
         res_mid = compute_verdict(p_fake=0.50, threshold=0.50, inconclusive_band=(0.40, 0.60))
         assert res_mid["verdict"] == "INCONCLUSIVE"
         assert res_mid["label"] == "INCONCLUSIVE"
-        assert res_mid["icon"] == "⚡"
+        assert res_mid["icon"] == "~"
         assert res_mid["status"] == "inconclusive"
         assert res_mid["color"] == "#FFC247"
 
@@ -178,7 +219,7 @@ class TestStreamlitAppTest:
         at = AppTest.from_file("app.py", default_timeout=30)
         at.run()
         assert len(at.tabs) == 6
-        expected_labels = ["🔍 Analyze", "📁 Batch", "📜 History", "📊 Model & Results", "⚙️ How It Works", "ℹ️ About & Limitations"]
+        expected_labels = ["Analyze", "Batch", "History", "Model & Results", "How It Works", "About & Limitations"]
         for expected in expected_labels:
             assert any(expected in tab.label for tab in at.tabs), f"Tab '{expected}' not found in rendered tabs"
 
@@ -281,3 +322,139 @@ class TestForbiddenColors:
                     f"Forbidden blue hue detected: {hex_code} "
                     f"(Hue: {hue_deg:.1f}deg, Sat: {saturation_pct:.1f}%, Light: {lightness_pct:.1f}%)"
                 )
+
+    def test_no_forbidden_named_colors_in_ui_assets(self):
+        """Scan UI assets for forbidden named CSS colors (black, blue, green, cyan, teal, etc.).
+
+        Ensures no CSS style properties or markup attributes use forbidden named color keywords.
+        Comments and docstrings are excluded from matching.
+        """
+        import re
+        from pathlib import Path
+
+        target_files = [
+            Path(PROJECT_ROOT) / "theme.py",
+            Path(PROJECT_ROOT) / "ui_styles.py",
+            Path(PROJECT_ROOT) / "ui_helpers.py",
+            Path(PROJECT_ROOT) / "app.py",
+            Path(PROJECT_ROOT) / ".streamlit" / "config.toml",
+        ]
+
+        forbidden_names = [
+            "black",
+            "blue",
+            "green",
+            "cyan",
+            "teal",
+            "navy",
+            "lime",
+            "aqua",
+            "darkblue",
+            "mediumblue",
+            "seagreen",
+            "darkgreen",
+            "forestgreen",
+            "midnightblue",
+        ]
+
+        # Pattern targeting CSS property or HTML attribute color assignments
+        # e.g., color: blue; fill="black"; stroke="cyan"; border: 1px solid green;
+        css_attr_pattern = re.compile(
+            r"""(?ix)
+            (?:color|background|background-color|border|border-color|fill|stroke|outline)\s*[:=]\s*['"]?[^'";\n>]*?\b("""
+            + "|".join(forbidden_names)
+            + r""")\b"""
+        )
+
+        violations = []
+        for f_path in target_files:
+            assert f_path.exists(), f"Target UI file missing: {f_path}"
+            content = f_path.read_text(encoding="utf-8")
+            # Strip comments to prevent false positives in descriptive explanations
+            cleaned_lines = []
+            in_multiline_docstring = False
+            for line in content.splitlines():
+                stripped = line.strip()
+                if stripped.startswith('"""') or stripped.startswith("'''"):
+                    if stripped.count('"""') == 1 or stripped.count("'''") == 1:
+                        in_multiline_docstring = not in_multiline_docstring
+                        continue
+                if in_multiline_docstring:
+                    continue
+                # Remove single-line comment
+                code_only = line.split("#")[0]
+                cleaned_lines.append(code_only)
+
+            code_text = "\n".join(cleaned_lines)
+            for m in css_attr_pattern.finditer(code_text):
+                matched_color = m.group(1).lower()
+                violations.append(f"{f_path.name}: matched '{matched_color}' in '{m.group(0)}'")
+
+        assert len(violations) == 0, f"Found forbidden named CSS colors in UI assets:\n" + "\n".join(violations)
+
+    def test_no_forbidden_rgb_or_hsl_values_in_ui_assets(self):
+        """Scan UI assets for rgb()/rgba() and hsl()/hsla() definitions and verify hue and lightness."""
+        import colorsys
+        import re
+        from pathlib import Path
+
+        target_files = [
+            Path(PROJECT_ROOT) / "theme.py",
+            Path(PROJECT_ROOT) / "ui_styles.py",
+            Path(PROJECT_ROOT) / "ui_helpers.py",
+            Path(PROJECT_ROOT) / "app.py",
+            Path(PROJECT_ROOT) / ".streamlit" / "config.toml",
+        ]
+
+        rgb_pattern = re.compile(r"rgba?\s*\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*([0-9.]+))?\s*\)")
+        hsl_pattern = re.compile(r"hsla?\s*\(\s*([0-9.]+)\s*,\s*([0-9.]+)%?\s*,\s*([0-9.]+)%?(?:\s*,\s*([0-9.]+))?\s*\)")
+
+        for f_path in target_files:
+            content = f_path.read_text(encoding="utf-8")
+            for m in rgb_pattern.finditer(content):
+                r = int(m.group(1)) / 255.0
+                g = int(m.group(2)) / 255.0
+                b = int(m.group(3)) / 255.0
+                alpha = float(m.group(4)) if m.group(4) else 1.0
+
+                if alpha == 0:
+                    continue  # fully transparent
+
+                h, l, s = colorsys.rgb_to_hls(r, g, b)
+                hue_deg = h * 360.0
+                lightness_pct = l * 100.0
+                saturation_pct = s * 100.0
+
+                # Check near-black
+                assert lightness_pct >= 8.0, (
+                    f"Forbidden near-black rgb found in {f_path.name}: {m.group(0)} (Lightness {lightness_pct:.1f}%)"
+                )
+
+                # Skip neutral/near-white
+                if lightness_pct < 88.0 and saturation_pct >= 10.0:
+                    assert not (65.0 <= hue_deg <= 165.0), (
+                        f"Forbidden green rgb found in {f_path.name}: {m.group(0)} (Hue {hue_deg:.1f}deg)"
+                    )
+                    assert not (170.0 <= hue_deg <= 255.0), (
+                        f"Forbidden blue rgb found in {f_path.name}: {m.group(0)} (Hue {hue_deg:.1f}deg)"
+                    )
+
+            for m in hsl_pattern.finditer(content):
+                hue_deg = float(m.group(1))
+                saturation_pct = float(m.group(2))
+                lightness_pct = float(m.group(3))
+                alpha = float(m.group(4)) if m.group(4) else 1.0
+
+                if alpha == 0:
+                    continue
+
+                assert lightness_pct >= 8.0, (
+                    f"Forbidden near-black hsl found in {f_path.name}: {m.group(0)} (Lightness {lightness_pct:.1f}%)"
+                )
+                if lightness_pct < 88.0 and saturation_pct >= 10.0:
+                    assert not (65.0 <= hue_deg <= 165.0), (
+                        f"Forbidden green hsl found in {f_path.name}: {m.group(0)} (Hue {hue_deg:.1f}deg)"
+                    )
+                    assert not (170.0 <= hue_deg <= 255.0), (
+                        f"Forbidden blue hsl found in {f_path.name}: {m.group(0)} (Hue {hue_deg:.1f}deg)"
+                    )
