@@ -38,7 +38,7 @@ class TestVerdictLogic:
         assert res["label"] == "AUTHENTIC"
         assert res["icon"] == "✓"
         assert res["status"] == "real"
-        assert res["color"] == "#2DE2C4"
+        assert res["color"] == "#C4A1FF"
         assert "authentic" in res["confidence"].lower()
         assert res["p_fake"] == pytest.approx(0.10)
         assert res["p_real"] == pytest.approx(0.90)
@@ -50,7 +50,7 @@ class TestVerdictLogic:
         assert res["label"] == "MANIPULATED"
         assert res["icon"] == "⚠️"
         assert res["status"] == "fake"
-        assert res["color"] == "#FF3D81"
+        assert res["color"] == "#FF5A36"
         assert "manipulation" in res["confidence"].lower()
         assert res["p_fake"] == pytest.approx(0.92)
 
@@ -62,7 +62,7 @@ class TestVerdictLogic:
         assert res_mid["label"] == "INCONCLUSIVE"
         assert res_mid["icon"] == "⚡"
         assert res_mid["status"] == "inconclusive"
-        assert res_mid["color"] == "#FFB020"
+        assert res_mid["color"] == "#FFC247"
 
         # On the lower boundary
         res_low = compute_verdict(p_fake=0.40, threshold=0.50, inconclusive_band=(0.40, 0.60))
@@ -209,3 +209,75 @@ class TestStreamlitAppTest:
                 break
 
         assert banner_found, "Persistent prototype warning banner was not found in rendered markdown!"
+
+
+class TestForbiddenColors:
+    """Test suite ensuring strict compliance with the Ultraviolet Forensics palette.
+
+    HARD CONSTRAINT: Strictly zero black, blue, or green anywhere in the UI.
+    """
+
+    def test_no_forbidden_color_families_in_ui_assets(self):
+        """Parse all hex colors from ui_styles.py, ui_helpers.py, and config.toml,
+
+        convert to HSL, and fail if any is pure/near black (lightness < 8%) or
+        falls in a blue or green hue range (allowing near-white neutral text).
+        """
+        import colorsys
+        import re
+        from pathlib import Path
+
+        target_files = [
+            Path(PROJECT_ROOT) / "theme.py",
+            Path(PROJECT_ROOT) / "ui_styles.py",
+            Path(PROJECT_ROOT) / "ui_helpers.py",
+            Path(PROJECT_ROOT) / "app.py",
+            Path(PROJECT_ROOT) / ".streamlit" / "config.toml",
+        ]
+
+        hex_pattern = re.compile(r"#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})\b")
+        discovered_hexes = set()
+
+        for f_path in target_files:
+            assert f_path.exists(), f"Target UI file missing: {f_path}"
+            content = f_path.read_text(encoding="utf-8")
+            matches = hex_pattern.findall(content)
+            discovered_hexes.update(matches)
+
+        assert len(discovered_hexes) > 0, "No hex colors discovered in UI files"
+
+        for hex_code in sorted(discovered_hexes):
+            clean_hex = hex_code.lstrip("#")
+            if len(clean_hex) == 3:
+                clean_hex = "".join([c * 2 for c in clean_hex])
+
+            r = int(clean_hex[0:2], 16) / 255.0
+            g = int(clean_hex[2:4], 16) / 255.0
+            b = int(clean_hex[4:6], 16) / 255.0
+
+            h, l, s = colorsys.rgb_to_hls(r, g, b)
+            hue_deg = h * 360.0
+            lightness_pct = l * 100.0
+            saturation_pct = s * 100.0
+
+            # 1. Pure or near black check: lightness < 8%
+            assert lightness_pct >= 8.0, (
+                f"Forbidden near-black color detected: {hex_code} "
+                f"(Lightness: {lightness_pct:.1f}% < 8%)"
+            )
+
+            # Allow near-white neutral text (lightness >= 88% or saturation < 10%)
+            is_neutral_light = lightness_pct >= 88.0 or saturation_pct < 10.0
+
+            if not is_neutral_light:
+                # 2. Green hue range: 65 deg to 165 deg
+                assert not (65.0 <= hue_deg <= 165.0), (
+                    f"Forbidden green hue detected: {hex_code} "
+                    f"(Hue: {hue_deg:.1f}deg, Sat: {saturation_pct:.1f}%, Light: {lightness_pct:.1f}%)"
+                )
+
+                # 3. Blue hue range: 170 deg to 255 deg
+                assert not (170.0 <= hue_deg <= 255.0), (
+                    f"Forbidden blue hue detected: {hex_code} "
+                    f"(Hue: {hue_deg:.1f}deg, Sat: {saturation_pct:.1f}%, Light: {lightness_pct:.1f}%)"
+                )

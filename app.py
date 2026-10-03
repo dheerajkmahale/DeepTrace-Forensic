@@ -1,7 +1,7 @@
-"""Forensic Glitch Deepfake Detection Streamlit Application.
+"""Ultraviolet Forensics Deepfake Detection Streamlit Application.
 
 Interactive web application for spatio-temporal deepfake analysis featuring:
-- Forensic Glitch cyber visual aesthetic
+- Ultraviolet Forensics cyber visual aesthetic (zero black, blue, or green)
 - Prototype Model and Real Experiment Model selection
 - Single video analysis with staged telemetry and evidence inspection
 - Batch evaluation with resilient failure isolation
@@ -21,6 +21,7 @@ import pandas as pd
 import streamlit as st
 
 from config import Config
+from theme import THEME
 from ui_helpers import (
     build_clips_bar_chart,
     build_html_report,
@@ -36,13 +37,13 @@ from ui_styles import APP_LOGO_SVG, FORENSIC_THEME_CSS, PIPELINE_FLOW_HTML
 # Page Configuration
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="Deepfake Detector | Forensic Analysis",
-    page_icon="🛡️",
+    page_title="Deepfake Detector | Ultraviolet Forensics",
+    page_icon="🔮",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# Apply Forensic Glitch Theme Styling
+# Apply Ultraviolet Forensics Theme Styling
 st.markdown(FORENSIC_THEME_CSS, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
@@ -111,18 +112,18 @@ with st.sidebar:
         selected_model_path = PROTOTYPE_MODEL_PATH
         is_synthetic = True
 
-    # Provenance Badge
+    # Provenance Badge in Ultraviolet Theme
     if is_synthetic:
         st.markdown(
-            '<div style="background: rgba(255, 176, 32, 0.15); border: 1px solid #FFB020; '
-            'border-radius: 6px; padding: 6px 10px; font-size: 0.8rem; color: #FFB020; text-align: center; font-weight: 600;">'
+            f'<div style="background: rgba(255, 194, 71, 0.15); border: 1px solid {THEME["inconclusive"]}; '
+            f'border-radius: 6px; padding: 6px 10px; font-size: 0.8rem; color: {THEME["inconclusive"]}; text-align: center; font-weight: 600;">'
             'MODE: PROTOTYPE (SYNTHETIC)</div>',
             unsafe_allow_html=True,
         )
     else:
         st.markdown(
-            '<div style="background: rgba(45, 226, 196, 0.15); border: 1px solid #2DE2C4; '
-            'border-radius: 6px; padding: 6px 10px; font-size: 0.8rem; color: #2DE2C4; text-align: center; font-weight: 600;">'
+            f'<div style="background: rgba(196, 161, 255, 0.15); border: 1px solid {THEME["authentic"]}; '
+            f'border-radius: 6px; padding: 6px 10px; font-size: 0.8rem; color: {THEME["authentic"]}; text-align: center; font-weight: 600;">'
             'MODE: REAL EXPERIMENT</div>',
             unsafe_allow_html=True,
         )
@@ -183,7 +184,7 @@ st.markdown(
         <span class="glitch-title">Deepfake Detector</span>
     </div>
     <div class="forensic-subtitle">
-        Forensic Spatio-Temporal Video Manipulation Analysis System
+        Ultraviolet Forensics Spatio-Temporal Video Manipulation Analysis System
     </div>
     """,
     unsafe_allow_html=True,
@@ -192,7 +193,7 @@ st.markdown(
 # Status Chips Row
 git_commit_short = get_git_commit()
 model_chip_name = "demo/best_model" if is_synthetic else "outputs/best_model"
-model_chip_color = "dot-amber" if is_synthetic else "dot-teal"
+model_chip_color = "dot-gold" if is_synthetic else "dot-lilac"
 
 st.markdown(
     f"""
@@ -202,19 +203,19 @@ st.markdown(
             <span>Model: <b>{model_chip_name}</b></span>
         </div>
         <div class="status-chip">
-            <span class="status-chip-dot dot-cyan"></span>
+            <span class="status-chip-dot dot-uv"></span>
             <span>Backbone: <b>CNN (4-Block) + LSTM-128</b></span>
         </div>
         <div class="status-chip">
-            <span class="status-chip-dot dot-cyan"></span>
+            <span class="status-chip-dot dot-uv"></span>
             <span>Sequence: <b>10 frames @ 128×128</b></span>
         </div>
         <div class="status-chip">
-            <span class="status-chip-dot dot-teal"></span>
+            <span class="status-chip-dot dot-lilac"></span>
             <span>TensorFlow: <b>Active</b></span>
         </div>
         <div class="status-chip">
-            <span class="status-chip-dot dot-magenta"></span>
+            <span class="status-chip-dot dot-vermilion"></span>
             <span>Git: <code>{git_commit_short}</code></span>
         </div>
     </div>
@@ -336,10 +337,10 @@ with tab_analyze:
             st.markdown("</div>", unsafe_allow_html=True)
         else:
             st.markdown(
-                """
-                <div style="border: 2px dashed #1E293B; border-radius: 12px; padding: 48px;
-                            text-align: center; color: #8B97B1; background: #0A0E1A;">
-                    <div style="font-size: 2rem; margin-bottom: 8px;">🎬</div>
+                f"""
+                <div style="border: 2px dashed {THEME['panel_border']}; border-radius: 12px; padding: 48px;
+                            text-align: center; color: {THEME['text_muted']}; background: {THEME['bg_dark']};">
+                    <div style="font-size: 2rem; margin-bottom: 8px;">🔮</div>
                     Select or upload a video file to activate forensic preview.
                 </div>
                 """,
@@ -727,16 +728,16 @@ with tab_results:
             st.error(f"Error reading metrics file: {e}")
     else:
         st.markdown(
-            """
-            <div class="glass-panel" style="border-left: 5px solid #22D3EE;">
-                <h4 style="color: #22D3EE; margin-top: 0;">🔬 Celeb-DF v2 Benchmark Status</h4>
-                <p style="color: #CBD5E1; line-height: 1.5;">
+            f"""
+            <div class="glass-panel" style="border-left: 5px solid {THEME['primary_accent']};">
+                <h4 style="color: {THEME['primary_accent']}; margin-top: 0;">🔬 Celeb-DF v2 Benchmark Status</h4>
+                <p style="color: {THEME['text_primary']}; line-height: 1.5;">
                     <b>Real experiment not yet run.</b><br>
                     Official Celeb-DF v2 benchmark training and evaluation have not been executed on this machine.
                     In accordance with strict scientific honesty principles, precision, recall, F1, and AUC metrics
                     are <b>never simulated, placeholder-generated, or estimated</b>.
                 </p>
-                <div style="font-size: 0.85rem; color: #8B97B1;">
+                <div style="font-size: 0.85rem; color: {THEME['text_muted']};">
                     Expected benchmark data: 890 real videos, 5,639 fake videos, evaluated on the official 518-video test list.
                 </div>
             </div>
@@ -774,10 +775,10 @@ with tab_results:
     b_col1, b_col2 = st.columns(2)
     with b_col1:
         st.markdown(
-            """
+            f"""
             <div class="glass-panel">
-                <h5 style="color: #2DE2C4; margin-top:0;">Spatial Feature Extractor (CNN)</h5>
-                <ul style="font-size: 0.88rem; color: #CBD5E1; line-height: 1.6;">
+                <h5 style="color: {THEME['authentic']}; margin-top:0;">Spatial Feature Extractor (CNN)</h5>
+                <ul style="font-size: 0.88rem; color: {THEME['text_primary']}; line-height: 1.6;">
                     <li><b>Input Shape:</b> <code>(batch, 10, 128, 128, 3)</code> uint8 RGB</li>
                     <li><b>Normalization:</b> <code>Rescaling(1./255)</code></li>
                     <li><b>Block 1:</b> <code>Conv2D(32, 3x3)</code> + BatchNorm + MaxPool(2x2) + Dropout(0.2)</li>
@@ -793,10 +794,10 @@ with tab_results:
 
     with b_col2:
         st.markdown(
-            """
+            f"""
             <div class="glass-panel">
-                <h5 style="color: #FF3D81; margin-top:0;">Temporal Sequence & Classification</h5>
-                <ul style="font-size: 0.88rem; color: #CBD5E1; line-height: 1.6;">
+                <h5 style="color: {THEME['manipulated']}; margin-top:0;">Temporal Sequence & Classification</h5>
+                <ul style="font-size: 0.88rem; color: {THEME['text_primary']}; line-height: 1.6;">
                     <li><b>Temporal Unit:</b> <code>LSTM(128)</code> with recurrent dropout=0.2</li>
                     <li><b>Sequence Modeling:</b> Captures inter-frame facial jitter, boundary artifacts, and temporal inconsistencies</li>
                     <li><b>Dense Head:</b> <code>Dense(64, ReLU)</code> + Dropout(0.4)</li>
@@ -822,10 +823,10 @@ with tab_how:
 
     with h_col1:
         st.markdown(
-            """
+            f"""
             <div class="glass-panel">
-                <h5 style="color: #22D3EE;">1. Uniform Sampling</h5>
-                <p style="font-size: 0.85rem; color: #CBD5E1;">
+                <h5 style="color: {THEME['primary_accent']};">1. Uniform Sampling</h5>
+                <p style="font-size: 0.85rem; color: {THEME['text_muted']};">
                     Videos are partitioned into <code>clips_per_video = 3</code> non-overlapping segments.
                     Within each segment, 10 frames are sampled linearly across the duration.
                 </p>
@@ -836,10 +837,10 @@ with tab_how:
 
     with h_col2:
         st.markdown(
-            """
+            f"""
             <div class="glass-panel">
-                <h5 style="color: #2DE2C4;">2. Facial Bounding Box</h5>
-                <p style="font-size: 0.85rem; color: #CBD5E1;">
+                <h5 style="color: {THEME['authentic']};">2. Facial Bounding Box</h5>
+                <p style="font-size: 0.85rem; color: {THEME['text_muted']};">
                     OpenCV Haar cascade detects frontal facial features. An expanded 25% margin ensures
                     hairline, jawline, and boundary blending artifacts are fully enclosed.
                 </p>
@@ -850,10 +851,10 @@ with tab_how:
 
     with h_col3:
         st.markdown(
-            """
+            f"""
             <div class="glass-panel">
-                <h5 style="color: #FF3D81;">3. Spatio-Temporal Hybrid</h5>
-                <p style="font-size: 0.85rem; color: #CBD5E1;">
+                <h5 style="color: {THEME['manipulated']};">3. Spatio-Temporal Hybrid</h5>
+                <p style="font-size: 0.85rem; color: {THEME['text_muted']};">
                     Frame features extracted by the 4-block CNN are sequentially evaluated by the LSTM.
                     Clip scores are mean-aggregated to produce the video-level verdict.
                 </p>
@@ -869,14 +870,14 @@ with tab_about:
     st.markdown("### ℹ️ About the Project, Limitations & Privacy")
 
     st.markdown(
-        """
+        f"""
         <div class="glass-panel">
-            <h4 style="color: #22D3EE; margin-top: 0;">Forensic Limitations & Technical Disclosures</h4>
-            <p style="font-size: 0.88rem; color: #CBD5E1; line-height: 1.6;">
+            <h4 style="color: {THEME['primary_accent']}; margin-top: 0;">Forensic Limitations & Technical Disclosures</h4>
+            <p style="font-size: 0.88rem; color: {THEME['text_primary']}; line-height: 1.6;">
                 Deepfake detection in unconstrained real-world environments is an open research challenge.
                 Users and forensic evaluators must understand the following technical boundary conditions:
             </p>
-            <ul style="font-size: 0.88rem; color: #CBD5E1; line-height: 1.7;">
+            <ul style="font-size: 0.88rem; color: {THEME['text_muted']}; line-height: 1.7;">
                 <li><b>OpenCV Haar Cascade Limits:</b> Haar cascades require frontal or near-frontal facial poses. Extreme head rotations, strong shadows, or motion blur can cause detection failures.</li>
                 <li><b>Class Imbalance Considerations:</b> The Celeb-DF v2 dataset contains 890 real and 5,639 synthetic videos (~1:6 ratio). Class weighting is used during training to prevent majority-class collapse.</li>
                 <li><b>Identity Overlap Leakage Prevention:</b> Train, validation, and test splits are strictly separated by celebrity subject identity to prevent the neural network from memorizing facial identities rather than manipulation artifacts.</li>
@@ -885,9 +886,9 @@ with tab_about:
             </ul>
         </div>
 
-        <div class="glass-panel" style="border-left: 5px solid #2DE2C4;">
-            <h4 style="color: #2DE2C4; margin-top: 0;">🔒 Privacy & Ephemeral Data Processing</h4>
-            <p style="font-size: 0.88rem; color: #CBD5E1; line-height: 1.6;">
+        <div class="glass-panel" style="border-left: 5px solid {THEME['authentic']};">
+            <h4 style="color: {THEME['authentic']}; margin-top: 0;">🔒 Privacy & Ephemeral Data Processing</h4>
+            <p style="font-size: 0.88rem; color: {THEME['text_primary']}; line-height: 1.6;">
                 All video uploads are handled on this local machine. Uploaded files are written to ephemeral temporary buffers
                 and are <b>strictly deleted immediately following inference</b> in a guaranteed <code>finally:</code> block.
                 No videos or facial images are transmitted over external networks or permanently retained.
@@ -901,10 +902,10 @@ with tab_about:
 # Footer
 # -----------------------------------------------------------------------------
 st.markdown(
-    """
-    <div style="margin-top: 40px; padding-top: 16px; border-top: 1px solid #1E293B;
-                text-align: center; font-size: 0.8rem; color: #8B97B1;">
-        Deepfake Detector | Spatio-Temporal CNN-LSTM Architecture | Academic Research Prototype
+    f"""
+    <div style="margin-top: 40px; padding-top: 16px; border-top: 1px solid {THEME['panel_border']};
+                text-align: center; font-size: 0.8rem; color: {THEME['text_muted']};">
+        Deepfake Detector | Spatio-Temporal CNN-LSTM Architecture | Ultraviolet Forensics
     </div>
     """,
     unsafe_allow_html=True,

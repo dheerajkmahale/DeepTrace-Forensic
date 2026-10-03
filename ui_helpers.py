@@ -2,8 +2,8 @@
 
 Provides pure functions for:
 - Verdict determination with custom decision thresholds and inconclusive bands
-- JSON and HTML forensic report generation
-- Plotly gauge and per-clip bar chart visualizers
+- JSON and HTML forensic report generation (Ultraviolet Forensics palette)
+- Plotly gauge and per-clip bar chart visualizers (zero black, blue, or green)
 - Diagnostic video extraction with face detection metrics and sample crop capture
 """
 
@@ -18,6 +18,7 @@ import numpy as np
 import plotly.graph_objects as go
 
 from preprocess import center_crop_and_resize, crop_face_with_margin, get_face_cascade
+from theme import THEME
 
 
 def get_git_commit(cwd: Optional[str] = None) -> str:
@@ -61,7 +62,7 @@ def compute_verdict(
         label = "INCONCLUSIVE"
         icon = "⚡"
         status = "inconclusive"
-        color = "#FFB020"  # Warning amber
+        color = THEME["inconclusive"]  # Gold (#FFC247)
         confidence = (
             f"Manipulation probability ({p_fake:.1%}) lies within the configured inconclusive "
             f"band [{low_band:.2f}, {high_band:.2f}]. Signals are ambiguous."
@@ -71,7 +72,7 @@ def compute_verdict(
         label = "MANIPULATED"
         icon = "⚠️"
         status = "fake"
-        color = "#FF3D81"  # Glitch magenta
+        color = THEME["manipulated"]  # Vermilion (#FF5A36)
         if p_fake >= 0.85:
             confidence = f"High confidence manipulation ({p_fake:.1%}) detected across spatio-temporal sequences."
         else:
@@ -81,7 +82,7 @@ def compute_verdict(
         label = "AUTHENTIC"
         icon = "✓"
         status = "real"
-        color = "#2DE2C4"  # Scan teal
+        color = THEME["authentic"]  # Lilac (#C4A1FF)
         if p_fake <= 0.15:
             confidence = f"High confidence authentic sequence ({p_real:.1%} real) with strong temporal consistency."
         else:
@@ -140,9 +141,9 @@ def build_json_report(analysis_data: Dict[str, Any]) -> str:
 
 
 def build_html_report(analysis_data: Dict[str, Any]) -> str:
-    """Generate a self-contained, themed HTML forensic report."""
+    """Generate a self-contained, themed HTML forensic report in Ultraviolet Forensics colors."""
     v_info = analysis_data.get("verdict_info", {})
-    color = v_info.get("color", "#2DE2C4")
+    color = v_info.get("color", THEME["authentic"])
     icon = v_info.get("icon", "✓")
     label = v_info.get("label", "AUTHENTIC")
     p_fake = float(analysis_data.get("p_fake", 0.0))
@@ -151,10 +152,10 @@ def build_html_report(analysis_data: Dict[str, Any]) -> str:
 
     proto_banner = ""
     if is_proto:
-        proto_banner = """
-        <div style="background: rgba(255, 176, 32, 0.15); border-left: 4px solid #FFB020; padding: 12px 16px; margin: 16px 0; border-radius: 6px; color: #E6EAF2;">
-            <b style="color: #FFB020;">PROTOTYPE DEMONSTRATION MODEL</b><br>
-            <span style="font-size: 0.88em; color: #CBD5E1;">
+        proto_banner = f"""
+        <div style="background: rgba(255, 194, 71, 0.15); border-left: 4px solid {THEME['inconclusive']}; padding: 12px 16px; margin: 16px 0; border-radius: 6px; color: {THEME['text_primary']};">
+            <b style="color: {THEME['inconclusive']};">PROTOTYPE DEMONSTRATION MODEL</b><br>
+            <span style="font-size: 0.88em; color: {THEME['text_muted']};">
                 This analysis was generated with a prototype model trained on synthetic demo data. Results on real face videos are NOT meaningful.
             </span>
         </div>
@@ -163,12 +164,12 @@ def build_html_report(analysis_data: Dict[str, Any]) -> str:
     clips_rows = ""
     for idx, p in enumerate(analysis_data.get("clip_probabilities", [])):
         clip_verdict = "MANIPULATED" if p >= analysis_data.get("threshold", 0.5) else "AUTHENTIC"
-        clip_color = "#FF3D81" if clip_verdict == "MANIPULATED" else "#2DE2C4"
+        clip_color = THEME["manipulated"] if clip_verdict == "MANIPULATED" else THEME["authentic"]
         clips_rows += f"""
         <tr>
-            <td style="padding: 8px 12px; border-bottom: 1px solid #1E293B;">Segment {idx + 1}</td>
-            <td style="padding: 8px 12px; border-bottom: 1px solid #1E293B; font-family: monospace;">{p:.4f} ({p*100:.1f}%)</td>
-            <td style="padding: 8px 12px; border-bottom: 1px solid #1E293B; color: {clip_color}; font-weight: bold;">{clip_verdict}</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid {THEME['panel_border']};">Segment {idx + 1}</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid {THEME['panel_border']}; font-family: monospace;">{p:.4f} ({p*100:.1f}%)</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid {THEME['panel_border']}; color: {clip_color}; font-weight: bold;">{clip_verdict}</td>
         </tr>
         """
 
@@ -176,11 +177,11 @@ def build_html_report(analysis_data: Dict[str, Any]) -> str:
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Forensic Deepfake Analysis Report - {analysis_data.get('video_filename', 'Video')}</title>
+    <title>Forensic Video Analysis Report - {analysis_data.get('video_filename', 'Video')}</title>
     <style>
         body {{
-            background-color: #0A0E1A;
-            color: #E6EAF2;
+            background-color: {THEME['bg_dark']};
+            color: {THEME['text_primary']};
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             margin: 0;
             padding: 30px;
@@ -188,17 +189,17 @@ def build_html_report(analysis_data: Dict[str, Any]) -> str:
         .report-box {{
             max-width: 800px;
             margin: 0 auto;
-            background: #121A2B;
-            border: 1px solid rgba(34, 211, 238, 0.2);
+            background: {THEME['panel_dark']};
+            border: 1px solid {THEME['panel_border']};
             border-radius: 12px;
             padding: 30px;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            box-shadow: 0 8px 32px rgba(42, 18, 72, 0.6);
         }}
-        h1 {{ margin: 0 0 4px 0; color: #E6EAF2; font-size: 1.8rem; }}
-        .subtitle {{ color: #8B97B1; font-size: 0.95rem; margin-bottom: 20px; }}
+        h1 {{ margin: 0 0 4px 0; color: {THEME['text_primary']}; font-size: 1.8rem; }}
+        .subtitle {{ color: {THEME['text_muted']}; font-size: 0.95rem; margin-bottom: 20px; }}
         .verdict-card {{
             border: 2px solid {color};
-            background: rgba(18, 26, 43, 0.9);
+            background: rgba(58, 26, 99, 0.9);
             border-radius: 10px;
             padding: 20px;
             text-align: center;
@@ -212,25 +213,25 @@ def build_html_report(analysis_data: Dict[str, Any]) -> str:
             margin: 20px 0;
             font-size: 0.9rem;
         }}
-        .meta-item {{ background: #0A0E1A; padding: 10px 14px; border-radius: 6px; border: 1px solid #1E293B; }}
-        .meta-label {{ color: #8B97B1; font-size: 0.8rem; text-transform: uppercase; }}
-        .meta-value {{ color: #E6EAF2; font-weight: 600; margin-top: 4px; }}
+        .meta-item {{ background: {THEME['bg_dark']}; padding: 10px 14px; border-radius: 6px; border: 1px solid {THEME['panel_border']}; }}
+        .meta-label {{ color: {THEME['text_muted']}; font-size: 0.8rem; text-transform: uppercase; }}
+        .meta-value {{ color: {THEME['text_primary']}; font-weight: 600; margin-top: 4px; }}
         table {{ width: 100%; border-collapse: collapse; margin-top: 14px; }}
-        th {{ text-align: left; padding: 8px 12px; background: #0A0E1A; color: #8B97B1; font-size: 0.8rem; }}
+        th {{ text-align: left; padding: 8px 12px; background: {THEME['bg_dark']}; color: {THEME['text_muted']}; font-size: 0.8rem; }}
         .disclaimer {{
             font-size: 0.8rem;
-            color: #8B97B1;
+            color: {THEME['text_muted']};
             margin-top: 30px;
             padding-top: 14px;
-            border-top: 1px solid #1E293B;
+            border-top: 1px solid {THEME['panel_border']};
             line-height: 1.5;
         }}
     </style>
 </head>
 <body>
     <div class="report-box">
-        <h1>🛡️ Forensic Video Analysis Report</h1>
-        <div class="subtitle">Deepfake Manipulation Diagnostic Assessment</div>
+        <h1>🔮 Forensic Video Analysis Report</h1>
+        <div class="subtitle">Ultraviolet Deepfake Manipulation Diagnostic Assessment</div>
 
         {proto_banner}
 
@@ -239,7 +240,7 @@ def build_html_report(analysis_data: Dict[str, Any]) -> str:
             <div style="margin-top: 8px; font-size: 1.1rem;">
                 Manipulation Probability: <b>{p_fake*100:.1f}%</b> | Authentic Probability: <b>{p_real*100:.1f}%</b>
             </div>
-            <div style="font-size: 0.88rem; color: #8B97B1; margin-top: 6px;">
+            <div style="font-size: 0.88rem; color: {THEME['text_muted']}; margin-top: 6px;">
                 {v_info.get('confidence', '')}
             </div>
         </div>
@@ -271,7 +272,7 @@ def build_html_report(analysis_data: Dict[str, Any]) -> str:
             </div>
         </div>
 
-        <h3 style="color: #22D3EE; font-size: 1.05rem; margin-top: 24px;">Segment Breakdown</h3>
+        <h3 style="color: {THEME['primary_accent']}; font-size: 1.05rem; margin-top: 24px;">Segment Breakdown</h3>
         <table>
             <thead>
                 <tr>
@@ -302,7 +303,7 @@ def build_probability_gauge(
     inconclusive_low: float = 0.40,
     inconclusive_high: float = 0.60,
 ) -> go.Figure:
-    """Create a sleek Plotly gauge indicator reflecting the Forensic Glitch theme."""
+    """Create a sleek Plotly gauge indicator reflecting the Ultraviolet Forensics theme."""
     p_fake = float(max(0.0, min(1.0, p_fake)))
     low_band, high_band = sorted([inconclusive_low, inconclusive_high])
 
@@ -310,29 +311,29 @@ def build_probability_gauge(
         go.Indicator(
             mode="gauge+number",
             value=p_fake * 100.0,
-            number={"suffix": "%", "font": {"color": "#E6EAF2", "size": 36, "family": "Space Grotesk, sans-serif"}},
+            number={"suffix": "%", "font": {"color": THEME["text_primary"], "size": 36, "family": "Space Grotesk, sans-serif"}},
             title={
-                "text": "<b>P(MANIPULATION)</b><br><span style='font-size:0.75em;color:#8B97B1'>Model confidence score</span>",
-                "font": {"color": "#8B97B1", "size": 13, "family": "Space Grotesk, sans-serif"},
+                "text": "<b>P(MANIPULATION)</b><br><span style='font-size:0.75em;color:#B9A4D6'>Model confidence score</span>",
+                "font": {"color": THEME["text_muted"], "size": 13, "family": "Space Grotesk, sans-serif"},
             },
             gauge={
                 "axis": {
                     "range": [0, 100],
                     "tickwidth": 1,
-                    "tickcolor": "#334155",
-                    "tickfont": {"color": "#8B97B1", "size": 10},
+                    "tickcolor": THEME["panel_border"],
+                    "tickfont": {"color": THEME["text_muted"], "size": 10},
                 },
-                "bar": {"color": "#E6EAF2", "thickness": 0.25},
-                "bgcolor": "#0A0E1A",
+                "bar": {"color": THEME["text_primary"], "thickness": 0.25},
+                "bgcolor": THEME["panel_dark"],
                 "borderwidth": 1,
-                "bordercolor": "rgba(34, 211, 238, 0.2)",
+                "bordercolor": THEME["panel_border"],
                 "steps": [
-                    {"range": [0, low_band * 100], "color": "rgba(45, 226, 196, 0.35)"},
-                    {"range": [low_band * 100, high_band * 100], "color": "rgba(255, 176, 32, 0.35)"},
-                    {"range": [high_band * 100, 100], "color": "rgba(255, 61, 129, 0.35)"},
+                    {"range": [0, low_band * 100], "color": "rgba(196, 161, 255, 0.40)"},
+                    {"range": [low_band * 100, high_band * 100], "color": "rgba(255, 194, 71, 0.40)"},
+                    {"range": [high_band * 100, 100], "color": "rgba(255, 90, 54, 0.40)"},
                 ],
                 "threshold": {
-                    "line": {"color": "#22D3EE", "width": 3},
+                    "line": {"color": THEME["primary_accent"], "width": 3},
                     "thickness": 0.8,
                     "value": p_fake * 100.0,
                 },
@@ -341,11 +342,17 @@ def build_probability_gauge(
     )
 
     fig.update_layout(
-        paper_bgcolor="#121A2B",
-        plot_bgcolor="#121A2B",
+        template=None,
+        paper_bgcolor=THEME["panel_dark"],
+        plot_bgcolor=THEME["panel_dark"],
         margin=dict(l=20, r=20, t=50, b=20),
         height=220,
-        font=dict(color="#E6EAF2"),
+        font=dict(color=THEME["text_primary"]),
+        hoverlabel=dict(
+            bgcolor=THEME["panel_dark"],
+            bordercolor=THEME["panel_border"],
+            font=dict(color=THEME["text_primary"]),
+        ),
     )
     return fig
 
@@ -357,17 +364,17 @@ def build_clips_bar_chart(
     """Create a Plotly bar chart displaying per-clip manipulation probabilities."""
     labels = [f"Segment {i+1}" for i in range(len(clip_probabilities))]
     scores = [p * 100.0 for p in clip_probabilities]
-    colors = ["#FF3D81" if p >= threshold else "#2DE2C4" for p in clip_probabilities]
+    colors = [THEME["manipulated"] if p >= threshold else THEME["authentic"] for p in clip_probabilities]
 
     fig = go.Figure()
     fig.add_trace(
         go.Bar(
             x=labels,
             y=scores,
-            marker=dict(color=colors, line=dict(color="rgba(255,255,255,0.2)", width=1)),
+            marker=dict(color=colors, line=dict(color=THEME["panel_border"], width=1)),
             text=[f"{s:.1f}%" for s in scores],
             textposition="auto",
-            textfont=dict(color="#E6EAF2", size=11),
+            textfont=dict(color=THEME["text_primary"], size=11),
             hoverinfo="x+text",
         )
     )
@@ -378,27 +385,35 @@ def build_clips_bar_chart(
         x1=len(clip_probabilities) - 0.5,
         y0=threshold * 100.0,
         y1=threshold * 100.0,
-        line=dict(color="#22D3EE", width=2, dash="dash"),
+        line=dict(color=THEME["inconclusive"], width=2, dash="dash"),
     )
 
     fig.update_layout(
+        template=None,
         title={
             "text": "<b>Per-Clip Manipulation Probability</b>",
-            "font": {"color": "#E6EAF2", "size": 13, "family": "Space Grotesk, sans-serif"},
+            "font": {"color": THEME["text_primary"], "size": 13, "family": "Space Grotesk, sans-serif"},
         },
-        paper_bgcolor="#121A2B",
-        plot_bgcolor="#0A0E1A",
+        paper_bgcolor=THEME["panel_dark"],
+        plot_bgcolor=THEME["bg_dark"],
         margin=dict(l=20, r=20, t=40, b=20),
         height=220,
+        hoverlabel=dict(
+            bgcolor=THEME["panel_dark"],
+            bordercolor=THEME["panel_border"],
+            font=dict(color=THEME["text_primary"]),
+        ),
         yaxis=dict(
             range=[0, 105],
-            gridcolor="#1E293B",
-            tickfont=dict(color="#8B97B1", size=10),
-            title=dict(text="P(fake) %", font=dict(color="#8B97B1", size=10)),
+            gridcolor=THEME["panel_border"],
+            linecolor=THEME["panel_border"],
+            tickfont=dict(color=THEME["text_muted"], size=10),
+            title=dict(text="P(fake) %", font=dict(color=THEME["text_muted"], size=10)),
         ),
         xaxis=dict(
-            gridcolor="#1E293B",
-            tickfont=dict(color="#E6EAF2", size=11),
+            gridcolor=THEME["panel_border"],
+            linecolor=THEME["panel_border"],
+            tickfont=dict(color=THEME["text_primary"], size=11),
         ),
     )
     return fig
