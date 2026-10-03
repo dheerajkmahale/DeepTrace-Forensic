@@ -1,0 +1,534 @@
+"""Helper utilities, analysis logic, report generators, and visualizers for Streamlit UI.
+
+Provides pure functions for:
+- Verdict determination with custom decision thresholds and inconclusive bands
+- JSON and HTML forensic report generation
+- Plotly gauge and per-clip bar chart visualizers
+- Diagnostic video extraction with face detection metrics and sample crop capture
+"""
+
+import datetime
+import json
+import os
+import subprocess
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+import cv2
+import numpy as np
+import plotly.graph_objects as go
+
+from preprocess import center_crop_and_resize, crop_face_with_margin, get_face_cascade
+
+
+def get_git_commit(cwd: Optional[str] = None) -> str:
+    """Retrieve current short git commit hash or 'unknown' if not in a git repo."""
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=cwd or os.getcwd(),
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        return commit if commit else "unknown"
+    except Exception:
+        return "unknown"
+
+
+def compute_verdict(
+    p_fake: float,
+    threshold: float = 0.5,
+    inconclusive_band: Tuple[float, float] = (0.40, 0.60),
+) -> Dict[str, Any]:
+    """Compute forensic verdict, confidence assessment, and visual attributes.
+
+    Args:
+        p_fake: Manipulation probability in [0.0, 1.0].
+        threshold: Decision cutoff for binary classification.
+        inconclusive_band: Tuple of (low, high) bounds defining the uncertain zone.
+
+    Returns:
+        Dict containing verdict label, status, icon, color, confidence description,
+        and probability values.
+    """
+    p_fake = float(max(0.0, min(1.0, p_fake)))
+    p_real = float(max(0.0, min(1.0, 1.0 - p_fake)))
+
+    low_band, high_band = sorted(inconclusive_band)
+
+    # Inconclusive band check takes precedence
+    if low_band <= p_fake <= high_band:
+        verdict = "INCONCLUSIVE"
+        label = "INCONCLUSIVE"
+        icon = "⚡"
+        status = "inconclusive"
+        color = "#FFB020"  # Warning amber
+        confidence = (
+            f"Manipulation probability ({p_fake:.1%}) lies within the configured inconclusive "
+            f"band [{low_band:.2f}, {high_band:.2f}]. Signals are ambiguous."
+        )
+    elif p_fake >= threshold:
+        verdict = "FAKE"
+        label = "MANIPULATED"
+        icon = "⚠️"
+        status = "fake"
+        color = "#FF3D81"  # Glitch magenta
+        if p_fake >= 0.85:
+            confidence = f"High confidence manipulation ({p_fake:.1%}) detected across spatio-temporal sequences."
+        else:
+            confidence = f"Moderate confidence manipulation ({p_fake:.1%}) exceeding threshold cutoff ({threshold:.2f})."
+    else:
+        verdict = "REAL"
+        label = "AUTHENTIC"
+        icon = "✓"
+        status = "real"
+        color = "#2DE2C4"  # Scan teal
+        if p_fake <= 0.15:
+            confidence = f"High confidence authentic sequence ({p_real:.1%} real) with strong temporal consistency."
+        else:
+            confidence = f"Moderate confidence authentic features ({p_real:.1%} real) below threshold cutoff ({threshold:.2f})."
+
+    return {
+        "verdict": verdict,
+        "label": label,
+        "icon": icon,
+        "status": status,
+        "color": color,
+        "confidence": confidence,
+        "p_fake": p_fake,
+        "p_real": p_real,
+        "threshold": threshold,
+        "inconclusive_band": (low_band, high_band),
+    }
+
+
+def build_json_report(analysis_data: Dict[str, Any]) -> str:
+    """Generate a clean, standardized JSON forensic report string without raw media."""
+    raw_face_stats = analysis_data.get("face_stats", {})
+    clean_face_stats = {
+        "total_frames": int(raw_face_stats.get("total_frames", 0)),
+        "frames_inspected": int(raw_face_stats.get("frames_inspected", 0)),
+        "detected_faces_count": int(raw_face_stats.get("detected_faces_count", 0)),
+        "face_detection_rate": round(float(raw_face_stats.get("face_detection_rate", 0.0)), 4),
+        "fallback_used": bool(raw_face_stats.get("fallback_used", False)),
+    }
+    clean_data = {
+        "report_version": "1.0",
+        "generated_at": str(analysis_data.get("generated_at", datetime.datetime.now(datetime.timezone.utc).isoformat())),
+        "git_commit": str(analysis_data.get("git_commit", "unknown")),
+        "video_filename": str(analysis_data.get("video_filename", "unnamed_video.mp4")),
+        "model_used": str(analysis_data.get("model_used", "outputs/demo/best_model.keras")),
+        "model_provenance": str(analysis_data.get("model_provenance", "prototype_synthetic")),
+        "manipulation_probability": round(float(analysis_data.get("p_fake", 0.0)), 4),
+        "authentic_probability": round(float(analysis_data.get("p_real", 1.0)), 4),
+        "verdict": str(analysis_data.get("verdict", "UNKNOWN")),
+        "verdict_label": str(analysis_data.get("label", "UNKNOWN")),
+        "decision_threshold": round(float(analysis_data.get("threshold", 0.5)), 2),
+        "inconclusive_band": [
+            round(float(analysis_data.get("inconclusive_band", (0.4, 0.6))[0]), 2),
+            round(float(analysis_data.get("inconclusive_band", (0.4, 0.6))[1]), 2),
+        ],
+        "confidence_assessment": str(analysis_data.get("confidence", "")),
+        "clips_analyzed": int(analysis_data.get("clips_analyzed", 0)),
+        "clip_probabilities": [round(float(p), 4) for p in analysis_data.get("clip_probabilities", [])],
+        "face_detection_stats": clean_face_stats,
+        "legal_and_technical_disclaimer": (
+            "Model probability reflects neural network estimation of manipulation artifacts, "
+            "not definitive legal proof. Prototype model results on real face videos are NOT meaningful."
+        ),
+    }
+    return json.dumps(clean_data, indent=2, default=str)
+
+
+def build_html_report(analysis_data: Dict[str, Any]) -> str:
+    """Generate a self-contained, themed HTML forensic report."""
+    v_info = analysis_data.get("verdict_info", {})
+    color = v_info.get("color", "#2DE2C4")
+    icon = v_info.get("icon", "✓")
+    label = v_info.get("label", "AUTHENTIC")
+    p_fake = float(analysis_data.get("p_fake", 0.0))
+    p_real = float(analysis_data.get("p_real", 1.0))
+    is_proto = "demo" in analysis_data.get("model_used", "") or analysis_data.get("model_provenance") == "prototype_synthetic"
+
+    proto_banner = ""
+    if is_proto:
+        proto_banner = """
+        <div style="background: rgba(255, 176, 32, 0.15); border-left: 4px solid #FFB020; padding: 12px 16px; margin: 16px 0; border-radius: 6px; color: #E6EAF2;">
+            <b style="color: #FFB020;">PROTOTYPE DEMONSTRATION MODEL</b><br>
+            <span style="font-size: 0.88em; color: #CBD5E1;">
+                This analysis was generated with a prototype model trained on synthetic demo data. Results on real face videos are NOT meaningful.
+            </span>
+        </div>
+        """
+
+    clips_rows = ""
+    for idx, p in enumerate(analysis_data.get("clip_probabilities", [])):
+        clip_verdict = "MANIPULATED" if p >= analysis_data.get("threshold", 0.5) else "AUTHENTIC"
+        clip_color = "#FF3D81" if clip_verdict == "MANIPULATED" else "#2DE2C4"
+        clips_rows += f"""
+        <tr>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #1E293B;">Segment {idx + 1}</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #1E293B; font-family: monospace;">{p:.4f} ({p*100:.1f}%)</td>
+            <td style="padding: 8px 12px; border-bottom: 1px solid #1E293B; color: {clip_color}; font-weight: bold;">{clip_verdict}</td>
+        </tr>
+        """
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Forensic Deepfake Analysis Report - {analysis_data.get('video_filename', 'Video')}</title>
+    <style>
+        body {{
+            background-color: #0A0E1A;
+            color: #E6EAF2;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 30px;
+        }}
+        .report-box {{
+            max-width: 800px;
+            margin: 0 auto;
+            background: #121A2B;
+            border: 1px solid rgba(34, 211, 238, 0.2);
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }}
+        h1 {{ margin: 0 0 4px 0; color: #E6EAF2; font-size: 1.8rem; }}
+        .subtitle {{ color: #8B97B1; font-size: 0.95rem; margin-bottom: 20px; }}
+        .verdict-card {{
+            border: 2px solid {color};
+            background: rgba(18, 26, 43, 0.9);
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+            margin: 20px 0;
+        }}
+        .verdict-title {{ font-size: 2rem; font-weight: bold; color: {color}; }}
+        .meta-grid {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin: 20px 0;
+            font-size: 0.9rem;
+        }}
+        .meta-item {{ background: #0A0E1A; padding: 10px 14px; border-radius: 6px; border: 1px solid #1E293B; }}
+        .meta-label {{ color: #8B97B1; font-size: 0.8rem; text-transform: uppercase; }}
+        .meta-value {{ color: #E6EAF2; font-weight: 600; margin-top: 4px; }}
+        table {{ width: 100%; border-collapse: collapse; margin-top: 14px; }}
+        th {{ text-align: left; padding: 8px 12px; background: #0A0E1A; color: #8B97B1; font-size: 0.8rem; }}
+        .disclaimer {{
+            font-size: 0.8rem;
+            color: #8B97B1;
+            margin-top: 30px;
+            padding-top: 14px;
+            border-top: 1px solid #1E293B;
+            line-height: 1.5;
+        }}
+    </style>
+</head>
+<body>
+    <div class="report-box">
+        <h1>🛡️ Forensic Video Analysis Report</h1>
+        <div class="subtitle">Deepfake Manipulation Diagnostic Assessment</div>
+
+        {proto_banner}
+
+        <div class="verdict-card">
+            <div class="verdict-title">{icon} {label}</div>
+            <div style="margin-top: 8px; font-size: 1.1rem;">
+                Manipulation Probability: <b>{p_fake*100:.1f}%</b> | Authentic Probability: <b>{p_real*100:.1f}%</b>
+            </div>
+            <div style="font-size: 0.88rem; color: #8B97B1; margin-top: 6px;">
+                {v_info.get('confidence', '')}
+            </div>
+        </div>
+
+        <div class="meta-grid">
+            <div class="meta-item">
+                <div class="meta-label">Target Video</div>
+                <div class="meta-value">{analysis_data.get('video_filename', 'N/A')}</div>
+            </div>
+            <div class="meta-item">
+                <div class="meta-label">Evaluation Date (UTC)</div>
+                <div class="meta-value">{analysis_data.get('generated_at', 'N/A')}</div>
+            </div>
+            <div class="meta-item">
+                <div class="meta-label">Model Checkpoint</div>
+                <div class="meta-value" style="font-family: monospace; font-size: 0.85em;">{analysis_data.get('model_used', 'N/A')}</div>
+            </div>
+            <div class="meta-item">
+                <div class="meta-label">Git Commit</div>
+                <div class="meta-value" style="font-family: monospace;">{analysis_data.get('git_commit', 'unknown')}</div>
+            </div>
+            <div class="meta-item">
+                <div class="meta-label">Decision Threshold</div>
+                <div class="meta-value">{analysis_data.get('threshold', 0.5):.2f} (Inconclusive band: {analysis_data.get('inconclusive_band', (0.4, 0.6))})</div>
+            </div>
+            <div class="meta-item">
+                <div class="meta-label">Clips Analyzed</div>
+                <div class="meta-value">{analysis_data.get('clips_analyzed', 0)} segments</div>
+            </div>
+        </div>
+
+        <h3 style="color: #22D3EE; font-size: 1.05rem; margin-top: 24px;">Segment Breakdown</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Segment</th>
+                    <th>P(Manipulation)</th>
+                    <th>Segment Verdict</th>
+                </tr>
+            </thead>
+            <tbody>
+                {clips_rows}
+            </tbody>
+        </table>
+
+        <div class="disclaimer">
+            <b>Forensic Limitations & Technical Notice:</b><br>
+            Outputs generated by this system represent statistical model probabilities of visual and temporal manipulation artifacts,
+            not incontrovertible legal proof. Real face evaluation requires training on the verified Celeb-DF v2 benchmark.
+        </div>
+    </div>
+</body>
+</html>
+"""
+    return html
+
+
+def build_probability_gauge(
+    p_fake: float,
+    inconclusive_low: float = 0.40,
+    inconclusive_high: float = 0.60,
+) -> go.Figure:
+    """Create a sleek Plotly gauge indicator reflecting the Forensic Glitch theme."""
+    p_fake = float(max(0.0, min(1.0, p_fake)))
+    low_band, high_band = sorted([inconclusive_low, inconclusive_high])
+
+    fig = go.Figure(
+        go.Indicator(
+            mode="gauge+number",
+            value=p_fake * 100.0,
+            number={"suffix": "%", "font": {"color": "#E6EAF2", "size": 36, "family": "Space Grotesk, sans-serif"}},
+            title={
+                "text": "<b>P(MANIPULATION)</b><br><span style='font-size:0.75em;color:#8B97B1'>Model confidence score</span>",
+                "font": {"color": "#8B97B1", "size": 13, "family": "Space Grotesk, sans-serif"},
+            },
+            gauge={
+                "axis": {
+                    "range": [0, 100],
+                    "tickwidth": 1,
+                    "tickcolor": "#334155",
+                    "tickfont": {"color": "#8B97B1", "size": 10},
+                },
+                "bar": {"color": "#E6EAF2", "thickness": 0.25},
+                "bgcolor": "#0A0E1A",
+                "borderwidth": 1,
+                "bordercolor": "rgba(34, 211, 238, 0.2)",
+                "steps": [
+                    {"range": [0, low_band * 100], "color": "rgba(45, 226, 196, 0.35)"},
+                    {"range": [low_band * 100, high_band * 100], "color": "rgba(255, 176, 32, 0.35)"},
+                    {"range": [high_band * 100, 100], "color": "rgba(255, 61, 129, 0.35)"},
+                ],
+                "threshold": {
+                    "line": {"color": "#22D3EE", "width": 3},
+                    "thickness": 0.8,
+                    "value": p_fake * 100.0,
+                },
+            },
+        )
+    )
+
+    fig.update_layout(
+        paper_bgcolor="#121A2B",
+        plot_bgcolor="#121A2B",
+        margin=dict(l=20, r=20, t=50, b=20),
+        height=220,
+        font=dict(color="#E6EAF2"),
+    )
+    return fig
+
+
+def build_clips_bar_chart(
+    clip_probabilities: List[float],
+    threshold: float = 0.5,
+) -> go.Figure:
+    """Create a Plotly bar chart displaying per-clip manipulation probabilities."""
+    labels = [f"Segment {i+1}" for i in range(len(clip_probabilities))]
+    scores = [p * 100.0 for p in clip_probabilities]
+    colors = ["#FF3D81" if p >= threshold else "#2DE2C4" for p in clip_probabilities]
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            x=labels,
+            y=scores,
+            marker=dict(color=colors, line=dict(color="rgba(255,255,255,0.2)", width=1)),
+            text=[f"{s:.1f}%" for s in scores],
+            textposition="auto",
+            textfont=dict(color="#E6EAF2", size=11),
+            hoverinfo="x+text",
+        )
+    )
+
+    fig.add_shape(
+        type="line",
+        x0=-0.5,
+        x1=len(clip_probabilities) - 0.5,
+        y0=threshold * 100.0,
+        y1=threshold * 100.0,
+        line=dict(color="#22D3EE", width=2, dash="dash"),
+    )
+
+    fig.update_layout(
+        title={
+            "text": "<b>Per-Clip Manipulation Probability</b>",
+            "font": {"color": "#E6EAF2", "size": 13, "family": "Space Grotesk, sans-serif"},
+        },
+        paper_bgcolor="#121A2B",
+        plot_bgcolor="#0A0E1A",
+        margin=dict(l=20, r=20, t=40, b=20),
+        height=220,
+        yaxis=dict(
+            range=[0, 105],
+            gridcolor="#1E293B",
+            tickfont=dict(color="#8B97B1", size=10),
+            title=dict(text="P(fake) %", font=dict(color="#8B97B1", size=10)),
+        ),
+        xaxis=dict(
+            gridcolor="#1E293B",
+            tickfont=dict(color="#E6EAF2", size=11),
+        ),
+    )
+    return fig
+
+
+def extract_clips_with_diagnostics(
+    video_path: str,
+    seq_len: int = 10,
+    img_size: int = 128,
+    clips_per_video: int = 3,
+    face_margin: float = 0.25,
+    no_face_detect: bool = False,
+) -> Tuple[Optional[np.ndarray], Optional[str], Dict[str, Any]]:
+    """Extract temporal clips and diagnostic telemetry (face counts, fallback usage, sample crops).
+
+    Returns:
+        (clips_array, error_reason, diagnostics_dict)
+    """
+    if not os.path.exists(video_path):
+        return None, "File does not exist", {}
+
+    if os.path.getsize(video_path) == 0:
+        return None, "empty file", {}
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return None, "unreadable", {}
+
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if total_frames < seq_len:
+        cap.release()
+        return None, "too short", {"total_frames": total_frames}
+
+    face_cascade = None if no_face_detect else get_face_cascade()
+    valid_clips: List[np.ndarray] = []
+    any_frame_read = False
+    detected_faces_count = 0
+    total_frames_inspected = 0
+    fallback_used = False
+    sample_crops: List[np.ndarray] = []
+
+    for c in range(clips_per_video):
+        seg_start = int(c * total_frames / clips_per_video)
+        seg_end = int((c + 1) * total_frames / clips_per_video)
+        if seg_end <= seg_start:
+            continue
+
+        frame_indices = np.linspace(seg_start, seg_end - 1, seq_len, dtype=int)
+        raw_frames = []
+
+        for idx in frame_indices:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(idx))
+            ret, frame = cap.read()
+            if not ret or frame is None:
+                break
+            any_frame_read = True
+            raw_frames.append(frame)
+
+        if len(raw_frames) != seq_len:
+            continue
+
+        total_frames_inspected += seq_len
+
+        if no_face_detect:
+            processed_frames = []
+            for f in raw_frames:
+                crop = center_crop_and_resize(f, img_size)
+                rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+                processed_frames.append(rgb)
+                if len(sample_crops) < 6:
+                    sample_crops.append(rgb)
+            valid_clips.append(np.array(processed_frames, dtype=np.uint8))
+            fallback_used = True
+        else:
+            bboxes = []
+            for f in raw_frames:
+                gray = cv2.cvtColor(f, cv2.COLOR_BGR2GRAY)
+                detected = face_cascade.detectMultiScale(
+                    gray,
+                    scaleFactor=1.1,
+                    minNeighbors=4,
+                    minSize=(30, 30),
+                )
+                if len(detected) > 0:
+                    largest = max(detected, key=lambda b: b[2] * b[3])
+                    bboxes.append(tuple(largest))
+                    detected_faces_count += 1
+                else:
+                    bboxes.append(None)
+
+            valid_indices = [i for i, b in enumerate(bboxes) if b is not None]
+            if not valid_indices:
+                continue
+
+            if len(valid_indices) < seq_len:
+                fallback_used = True
+
+            filled_bboxes = []
+            last_valid = bboxes[valid_indices[0]]
+            for b in bboxes:
+                if b is not None:
+                    last_valid = b
+                filled_bboxes.append(last_valid)
+
+            processed_frames = []
+            for f, bbox in zip(raw_frames, filled_bboxes):
+                crop = crop_face_with_margin(f, bbox, face_margin, img_size)
+                rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
+                processed_frames.append(rgb)
+                if len(sample_crops) < 6:
+                    sample_crops.append(rgb)
+
+            valid_clips.append(np.array(processed_frames, dtype=np.uint8))
+
+    cap.release()
+
+    diagnostics = {
+        "total_frames": total_frames,
+        "frames_inspected": total_frames_inspected,
+        "detected_faces_count": detected_faces_count,
+        "face_detection_rate": (detected_faces_count / max(1, total_frames_inspected)) if not no_face_detect else 0.0,
+        "fallback_used": fallback_used,
+        "sample_crops": sample_crops,
+    }
+
+    if len(valid_clips) == 0:
+        if not any_frame_read:
+            return None, "unreadable", diagnostics
+        if not no_face_detect and detected_faces_count == 0:
+            return None, "no face detected", diagnostics
+        return None, "too short", diagnostics
+
+    return np.array(valid_clips, dtype=np.uint8), None, diagnostics
