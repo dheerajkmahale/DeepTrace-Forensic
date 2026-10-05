@@ -91,7 +91,7 @@ class TestVerdictLogic:
         assert res["label"] == "MANIPULATED"
         assert res["icon"] == "!"
         assert res["status"] == "fake"
-        assert res["color"] == "#FF5A36"
+        assert res["color"] == "#FF643D"
         assert "manipulation" in res["confidence"].lower()
         assert res["p_fake"] == pytest.approx(0.92)
 
@@ -458,3 +458,38 @@ class TestForbiddenColors:
                     assert not (170.0 <= hue_deg <= 255.0), (
                         f"Forbidden blue hsl found in {f_path.name}: {m.group(0)} (Hue {hue_deg:.1f}deg)"
                     )
+
+    def test_render_custom_video_player(self):
+        """Verify custom video player renders accessible HTML without native controls."""
+        from ui_helpers import render_custom_video_player
+        demo_video = "data/demo/raw/fake/synth_fake_00.mp4"
+        if os.path.exists(demo_video):
+            html = render_custom_video_player(demo_video)
+            assert "<video" in html
+            assert "controls" not in html.split("<video")[1].split(">")[0]
+            assert "forensic-play-btn" in html
+            assert "forensic-seeker" in html
+            assert "forensic-time" in html
+            assert "aria-label" in html
+
+        # Missing file fallback
+        missing_html = render_custom_video_player("non_existent_video.mp4")
+        assert "Selected video file not found" in missing_html
+
+    def test_render_forensic_table(self):
+        """Verify forensic table renders themed HTML with verdict chips."""
+        import pandas as pd
+        from ui_helpers import render_forensic_table
+        df = pd.DataFrame([
+            {"File": "sample1.mp4", "P(Fake)": "0.9500", "Verdict": "! MANIPULATED"},
+            {"File": "sample2.mp4", "P(Fake)": "0.0500", "Verdict": "✓ AUTHENTIC"},
+        ])
+        html = render_forensic_table(df)
+        assert "<table" in html
+        assert "sample1.mp4" in html
+        assert "! MANIPULATED" in html
+        assert "✓ AUTHENTIC" in html
+
+        # Empty df
+        empty_html = render_forensic_table(pd.DataFrame())
+        assert "No records to display" in empty_html

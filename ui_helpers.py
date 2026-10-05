@@ -7,6 +7,7 @@ Provides pure functions for:
 - Diagnostic video extraction with face detection metrics and sample crop capture
 """
 
+import base64
 import datetime
 import json
 import os
@@ -33,6 +34,137 @@ def html_block(html_str: str) -> str:
         return ""
     lines = [line.strip() for line in html_str.splitlines() if line.strip()]
     return "\n".join(lines)
+
+
+def render_custom_video_player(video_path: str) -> str:
+    """Render an accessible HTML5 video player conforming to the Ultraviolet Forensics palette.
+
+    Replaces native browser controls (which introduce near-black pixels in Blink shadow DOM)
+    with a fully-themed accessible plum/violet control bar.
+
+    Features:
+    - <video> element WITHOUT native controls (object-fit: contain, background #3A1A63).
+    - Fully-plum/violet control bar (#2A1248 background, #5B2E91 border).
+    - Keyboard-accessible Play/Pause button (#8B5CF6 accent) with aria-label.
+    - Keyboard-accessible timeline scrubber range input with aria-label.
+    - Monospace timestamp display (#F6EEFF lilac-white, aria-label).
+    - File size guard: files > 15MB display a plum-framed first-frame poster with notice.
+    """
+    if not os.path.exists(video_path):
+        return html_block(f"""
+        <div style="border: 2px dashed {THEME['panel_border']}; border-radius: 12px; padding: 48px;
+                    text-align: center; color: {THEME['text_muted']}; background: {THEME['bg_dark']};">
+            <div style="font-size: 1.5rem; margin-bottom: 8px;">[No Video]</div>
+            Selected video file not found on disk.
+        </div>
+        """)
+
+    file_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+
+    if file_size_mb > 15.0:
+        # Generate plum-framed first-frame poster
+        cap = cv2.VideoCapture(video_path)
+        ret, frame = cap.read()
+        cap.release()
+        if ret and frame is not None:
+            _, buf = cv2.imencode('.jpg', frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+            poster_b64 = base64.b64encode(buf).decode('utf-8')
+            poster_src = f"data:image/jpeg;base64,{poster_b64}"
+            return html_block(f"""
+            <div class="video-preview-wrapper" style="border: 1px solid {THEME['panel_border']}; border-radius: 12px; overflow: hidden; background: {THEME['panel_dark']};">
+                <div class="custom-video-screen" style="position: relative; width: 100%; aspect-ratio: 16/9; background: {THEME['panel_dark']}; display: flex; align-items: center; justify-content: center;">
+                    <img src="{poster_src}" alt="Video First Frame Poster" style="width: 100%; height: 100%; object-fit: contain; background: {THEME['panel_dark']};" />
+                    <div class="scanner-overlay"></div>
+                </div>
+                <div style="padding: 10px 14px; background: {THEME['bg_dark']}; border-top: 1px solid {THEME['panel_border']}; color: {THEME['text_muted']}; font-size: 0.82rem; text-align: center;">
+                    Video file ({file_size_mb:.1f} MB) exceeds inline preview limit (15 MB). Plum-framed first-frame poster shown; full video processed by pipeline.
+                </div>
+            </div>
+            """)
+
+    # Read and base64 encode
+    with open(video_path, "rb") as f:
+        v_b64 = base64.b64encode(f.read()).decode("utf-8")
+
+    player_html = f"""
+    <div class="video-preview-wrapper" style="border: 1px solid {THEME['panel_border']}; border-radius: 12px; overflow: hidden; background: {THEME['panel_dark']};">
+        <div class="custom-video-screen" style="position: relative; width: 100%; aspect-ratio: 16/9; background: {THEME['panel_dark']}; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+            <video id="forensic-custom-video"
+                   src="data:video/mp4;base64,{v_b64}"
+                   preload="metadata"
+                   playsinline
+                   ontimeupdate="var s=document.getElementById('forensic-seeker'); var t=document.getElementById('forensic-time'); if(s && this.duration) {{ s.value=(this.currentTime/this.duration)*100; }} if(t) {{ var m=Math.floor(this.currentTime/60); var sec=Math.floor(this.currentTime%60); t.innerText=(m<10?'0':'')+m+':'+(sec<10?'0':'')+sec; }}"
+                   onended="var b=document.getElementById('forensic-play-btn'); if(b) b.innerText='Play';"
+                   style="width: 100%; height: 100%; object-fit: contain; background: {THEME['panel_dark']};"></video>
+            <div class="scanner-overlay"></div>
+        </div>
+        <div class="custom-video-controls" style="display: flex; align-items: center; gap: 12px; padding: 10px 14px; background: {THEME['bg_dark']}; border-top: 1px solid {THEME['panel_border']};">
+            <button id="forensic-play-btn" type="button" aria-label="Play or pause forensic video preview" tabindex="0"
+                    onclick="var v=document.getElementById('forensic-custom-video'); if(v){{if(v.paused){{v.play(); this.innerText='Pause';}}else{{v.pause(); this.innerText='Play';}}}}"
+                    style="background: {THEME['primary_accent']}; color: #FFFFFF; border: none; border-radius: 6px; padding: 6px 14px; font-weight: 700; font-size: 0.95rem; cursor: pointer;">
+                Play
+            </button>
+            <input id="forensic-seeker" type="range" min="0" max="100" value="0" aria-label="Timeline scrubber" tabindex="0"
+                   oninput="var v=document.getElementById('forensic-custom-video'); if(v && v.duration){{v.currentTime=(this.value/100)*v.duration;}}"
+                   style="flex: 1; accent-color: {THEME['primary_accent']}; background: {THEME['panel_dark']}; cursor: pointer;">
+            <span id="forensic-time" aria-label="Playback timestamp" style="color: {THEME['text_primary']}; font-family: 'JetBrains Mono', monospace; font-size: 0.88rem; font-weight: 600;">
+                00:00
+            </span>
+        </div>
+    </div>
+    """
+    return html_block(player_html)
+
+
+def render_forensic_table(df: Any) -> str:
+    """Render a pandas DataFrame as a fully-themed Ultraviolet Forensics HTML table.
+
+    Replaces Streamlit's Glide Data Grid canvas (which renders hardcoded dark-blue canvas cells)
+    with a clean, styled HTML5 table adhering strictly to zero black, blue, or green.
+    """
+    if df is None or (hasattr(df, "empty") and df.empty):
+        return html_block(f"""
+        <div style="padding: 20px; text-align: center; color: {THEME['text_muted']}; background: {THEME['panel_dark']}; border: 1px solid {THEME['panel_border']}; border-radius: 8px;">
+            No records to display.
+        </div>
+        """)
+
+    headers = "".join([f"<th style='padding: 10px 14px; background: {THEME['bg_dark']}; color: {THEME['text_muted']}; border-bottom: 1px solid {THEME['panel_border']}; text-align: left; font-size: 0.85rem;'>{col}</th>" for col in df.columns])
+
+    rows_html = []
+    for _, row in df.iterrows():
+        cells = []
+        for col in df.columns:
+            val = str(row[col])
+            # Color-code verdict chips
+            if "AUTHENTIC" in val or "REAL" in val:
+                cell_content = f"<span style='color: {THEME['authentic']}; font-weight: 700;'>{val}</span>"
+            elif "MANIPULATED" in val or "FAKE" in val:
+                cell_content = f"<span style='color: {THEME['manipulated']}; font-weight: 700;'>{val}</span>"
+            elif "INCONCLUSIVE" in val:
+                cell_content = f"<span style='color: {THEME['inconclusive']}; font-weight: 700;'>{val}</span>"
+            elif "P(" in str(col) or "Prob" in str(col):
+                cell_content = f"<span style='font-family: monospace; color: {THEME['text_primary']};'>{val}</span>"
+            else:
+                cell_content = f"<span style='color: {THEME['text_primary']};'>{val}</span>"
+
+            cells.append(f"<td style='padding: 10px 14px; border-bottom: 1px solid {THEME['panel_border']}; font-size: 0.88rem;'>{cell_content}</td>")
+
+        rows_html.append(f"<tr style='background: {THEME['panel_dark']};'>{''.join(cells)}</tr>")
+
+    table_html = f"""
+    <div style="overflow-x: auto; border: 1px solid {THEME['panel_border']}; border-radius: 10px; margin: 12px 0 16px 0;">
+        <table style="width: 100%; border-collapse: collapse; background: {THEME['panel_dark']};">
+            <thead>
+                <tr>{headers}</tr>
+            </thead>
+            <tbody>
+                {''.join(rows_html)}
+            </tbody>
+        </table>
+    </div>
+    """
+    return html_block(table_html)
 
 
 def callout_info(msg: str) -> str:
@@ -423,7 +555,7 @@ def build_clips_bar_chart(
             y=scores,
             marker=dict(color=colors, line=dict(color=THEME["panel_border"], width=1)),
             text=[f"{s:.1f}%" for s in scores],
-            textposition="auto",
+            textposition="outside",
             textfont=dict(color=THEME["text_primary"], size=11),
             hoverinfo="x+text",
         )
@@ -454,7 +586,7 @@ def build_clips_bar_chart(
             font=dict(color=THEME["text_primary"]),
         ),
         yaxis=dict(
-            range=[0, 105],
+            range=[0, 120],
             gridcolor=THEME["panel_border"],
             linecolor=THEME["panel_border"],
             tickfont=dict(color=THEME["text_muted"], size=10),

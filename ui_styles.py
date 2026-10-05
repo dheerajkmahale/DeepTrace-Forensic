@@ -9,9 +9,9 @@ conforming strictly to the Ultraviolet Forensics specification:
 - Muted Text: #B9A4D6 (Lavender-Violet)
 - Primary Accent / Neutral Controls: #8B5CF6 (Ultraviolet)
 - Authentic: #C4A1FF (Lilac)
-- Manipulated: #FF5A36 (Vermilion)
+- Manipulated: #FF643D (Vermilion)
 - Inconclusive: #FFC247 (Gold)
-- Gradient: #8B5CF6 -> #FF5A36
+- Gradient: #8B5CF6 -> #FF643D
 
 HARD CONSTRAINT: Strictly zero black, blue, or green anywhere in the UI.
 """
@@ -88,7 +88,7 @@ code {{
     color: var(--text-primary);
     position: relative;
     display: inline-block;
-    text-shadow: -1px -1px 0px rgba(139, 92, 246, 0.6), 1px 1px 0px rgba(255, 90, 54, 0.6);
+    text-shadow: -1px -1px 0px rgba(139, 92, 246, 0.6), 1px 1px 0px rgba(255, 100, 61, 0.6);
 }}
 
 @keyframes titleGlitch {{
@@ -231,7 +231,7 @@ code {{
 }}
 
 .verdict-banner-fake {{
-    background: linear-gradient(180deg, rgba(255, 90, 54, 0.16) 0%, rgba(58, 26, 99, 0.95) 100%);
+    background: linear-gradient(180deg, rgba(255, 100, 61, 0.16) 0%, rgba(58, 26, 99, 0.95) 100%);
     border: 2px solid var(--manipulated-vermilion);
 }}
 
@@ -297,7 +297,7 @@ video::-webkit-media-controls-enclosure {{
         to bottom,
         rgba(139, 92, 246, 0) 0%,
         rgba(139, 92, 246, 0.12) 50%,
-        rgba(255, 90, 54, 0.25) 51%,
+        rgba(255, 100, 61, 0.25) 51%,
         rgba(139, 92, 246, 0) 55%
     );
     background-size: 100% 200%;
@@ -312,6 +312,58 @@ video::-webkit-media-controls-enclosure {{
     .scanner-overlay {{
         animation: scanAnimation 4s linear infinite;
     }}
+}}
+
+/* Custom Forensic Video Player */
+.custom-player-wrapper {{
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--panel-dark);
+}}
+.custom-video-screen {{
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16/9;
+    background: var(--panel-dark);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}}
+.custom-video-controls {{
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--bg-dark);
+    border-top: 1px solid var(--panel-border);
+}}
+#forensic-play-btn {{
+    background: var(--primary-accent);
+    color: #FFFFFF;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-weight: 700;
+    font-size: 0.95rem;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}}
+#forensic-play-btn:hover {{
+    background: #9D71F7;
+}}
+#forensic-seeker {{
+    flex: 1;
+    accent-color: var(--primary-accent);
+    background: var(--panel-dark);
+    cursor: pointer;
+}}
+#forensic-time {{
+    color: var(--text-primary);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.88rem;
+    font-weight: 600;
 }}
 
 /* Face Crop Strip */
@@ -360,8 +412,9 @@ video::-webkit-media-controls-enclosure {{
 
 .stTabs [aria-selected="true"] {{
     background: rgba(139, 92, 246, 0.18) !important;
-    color: var(--primary-accent) !important;
+    color: var(--text-primary) !important;
     font-weight: 700 !important;
+    font-size: 0.95rem !important;
     border: 1px solid var(--primary-accent) !important;
 }}
 
@@ -369,8 +422,9 @@ video::-webkit-media-controls-enclosure {{
 div.stButton > button[kind="primary"] {{
     background: var(--primary-accent) !important;
     border: 1px solid var(--panel-border) !important;
-    color: var(--text-primary) !important;
-    font-weight: 700;
+    color: #FFFFFF !important;
+    font-size: 1.18rem !important;
+    font-weight: 700 !important;
     letter-spacing: 0.03em;
     border-radius: 10px;
     padding: 10px 20px;

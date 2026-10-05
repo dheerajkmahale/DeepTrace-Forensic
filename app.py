@@ -35,6 +35,8 @@ from ui_helpers import (
     extract_clips_with_diagnostics,
     get_git_commit,
     html_block,
+    render_custom_video_player,
+    render_forensic_table,
 )
 from ui_styles import APP_LOGO_SVG, FORENSIC_THEME_CSS, PIPELINE_FLOW_HTML
 
@@ -191,7 +193,7 @@ with st.sidebar:
         st.session_state.analysis_history = []
         st.session_state.latest_analysis = None
         st.session_state.batch_results = []
-        st.rerun()
+        st.toast("Forensic analysis history cleared.")
 
 # -----------------------------------------------------------------------------
 # Main Header & Status Chips
@@ -354,15 +356,7 @@ with tab_analyze:
             unsafe_allow_html=True,
         )
         if target_video_path and os.path.exists(target_video_path):
-            st.markdown(
-                html_block('<div class="video-preview-wrapper"><div class="scanner-overlay"></div>'),
-                unsafe_allow_html=True,
-            )
-            try:
-                st.video(target_video_path)
-            except Exception:
-                st.caption("Video format cannot be rendered directly in browser; analysis will proceed.")
-            st.markdown(html_block("</div>"), unsafe_allow_html=True)
+            st.html(render_custom_video_player(target_video_path))
         else:
             st.markdown(
                 html_block(f"""
@@ -479,6 +473,7 @@ with tab_analyze:
                         "Verdict": f"{v_info['icon']} {v_info['label']}",
                         "Clips": len(clip_probs),
                     })
+                    st.toast(f"Forensic analysis complete: {v_info['label']}")
 
         finally:
             if is_temp_file and target_video_path and os.path.exists(target_video_path):
@@ -726,7 +721,7 @@ with tab_batch:
             unsafe_allow_html=True,
         )
         batch_df = pd.DataFrame(st.session_state.batch_results)
-        st.dataframe(batch_df, use_container_width=True)
+        st.markdown(render_forensic_table(batch_df), unsafe_allow_html=True)
 
         csv_data = batch_df.to_csv(index=False).encode("utf-8")
         st.download_button(
@@ -754,7 +749,7 @@ with tab_history:
 
     if st.session_state.analysis_history:
         hist_df = pd.DataFrame(st.session_state.analysis_history)
-        st.dataframe(hist_df, use_container_width=True)
+        st.markdown(render_forensic_table(hist_df), unsafe_allow_html=True)
 
         h_csv = hist_df.to_csv(index=False).encode("utf-8")
         st.download_button(

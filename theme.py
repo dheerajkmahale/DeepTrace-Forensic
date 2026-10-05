@@ -21,10 +21,10 @@ THEME: Dict[str, str] = {
 
     # Verdict Classifications (Strictly reserved for verdicts only)
     "authentic": "#C4A1FF",      # Lilac (Authentic / Real)
-    "manipulated": "#FF5A36",    # Vermilion (Manipulated / Fake)
+    "manipulated": "#FF643D",    # Vermilion (Manipulated / Fake, >= 4.74:1 contrast on #3A1A63)
     "inconclusive": "#FFC247",   # Gold (Inconclusive / Ambiguous)
 
     # Gradients & Highlights
     "gradient_start": "#8B5CF6", # Ultraviolet
-    "gradient_end": "#FF5A36",   # Vermilion
+    "gradient_end": "#FF643D",   # Vermilion
 }
