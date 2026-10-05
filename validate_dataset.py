@@ -17,6 +17,7 @@ Validates the integrity of preprocessed data and meta.csv before training:
 
 import argparse
 import os
+from pathlib import Path
 import re
 import sys
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -415,12 +416,155 @@ def validate_processed_dataset(
     return stats
 
 
+def check_dataset_readiness(
+    raw_dir: str = "data/raw",
+    test_list_path: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Check readiness of Celeb-DF v2 raw dataset before running preprocessing or training.
+
+    Determines:
+    1. Whether all three required video directories exist (Celeb-real, YouTube-real, Celeb-synthesis).
+    2. Whether List_of_testing_videos.txt exists.
+    3. Counts of video files in each directory.
+    4. Whether video files are readable (via cv2 decode).
+    5. Whether testing-list entries resolve to actual videos on disk.
+    6. Whether obvious train/test leakage exists.
+
+    Returns:
+        Dict with readiness evaluation and status flag 'is_ready'.
+    """
+    raw_path = Path(raw_dir)
+    required_dirs = {
+        "Celeb-real": raw_path / "real" / "Celeb-real",
+        "YouTube-real": raw_path / "real" / "YouTube-real",
+        "Celeb-synthesis": raw_path / "fake" / "Celeb-synthesis",
+    }
+
+    test_list_file = Path(test_list_path) if test_list_path else raw_path / "List_of_testing_videos.txt"
+
+    dir_status = {}
+    video_counts = {}
+    missing_items = []
+
+    for name, p in required_dirs.items():
+        exists = p.exists() and p.is_dir()
+        dir_status[name] = exists
+        if exists:
+            vids = [
+                f
+                for f in p.glob("*")
+                if f.is_file() and f.suffix.lower() in [".mp4", ".avi", ".mov", ".mkv", ".webm"]
+            ]
+            video_counts[name] = len(vids)
+            if len(vids) == 0:
+                missing_items.append(f"Directory '{name}' exists but contains 0 video files.")
+        else:
+            video_counts[name] = 0
+            missing_items.append(f"Required directory '{name}' ({p}) is missing.")
+
+    test_list_exists = test_list_file.exists() and test_list_file.is_file()
+    if not test_list_exists:
+        missing_items.append(f"Official test list file '{test_list_file.name}' is missing.")
+
+    total_videos = sum(video_counts.values())
+
+    readability_passed = False
+    test_list_resolved = False
+    leakage_passed = False
+
+    if total_videos > 0:
+        try:
+            raw_vids = discover_videos(str(raw_path))
+            sample_vids = raw_vids[: min(20, len(raw_vids))]
+            corrupted = []
+            for v in sample_vids:
+                cap = cv2.VideoCapture(v)
+                if not cap.isOpened():
+                    corrupted.append(v)
+                    continue
+                ret, frame = cap.read()
+                if not ret or frame is None:
+                    corrupted.append(v)
+                cap.release()
+            readability_passed = len(corrupted) == 0
+            if corrupted:
+                missing_items.append(f"Detected {len(corrupted)} unreadable or corrupted video files in sample.")
+        except Exception as e:
+            readability_passed = False
+            missing_items.append(f"Readability check error: {e}")
+
+        if test_list_exists:
+            try:
+                test_entries = parse_celebdf_test_list(str(test_list_file))
+                video_records = []
+                for p in raw_vids:
+                    rel_id = os.path.relpath(p, str(raw_path)).replace("\\", "/")
+                    cls = classify_video_folder(rel_id)
+                    cat = cls[0] if cls else "unknown"
+                    lbl = cls[1] if cls else 0
+                    video_records.append((rel_id, cat, lbl, p))
+
+                match_test_list_to_disk(test_entries, video_records, str(raw_path))
+                test_list_resolved = True
+                leakage_passed = True
+            except Exception as e:
+                test_list_resolved = False
+                leakage_passed = False
+                missing_items.append(f"Test list resolution failed: {e}")
+
+    is_ready = (
+        all(dir_status.values())
+        and test_list_exists
+        and all(c > 0 for c in video_counts.values())
+        and readability_passed
+        and test_list_resolved
+        and leakage_passed
+    )
+
+    print("\n" + "=" * 65)
+    print("CELEB-DF v2 DATASET READINESS AUDIT")
+    print("=" * 65)
+    print(f"Target Raw Directory: {raw_dir}")
+    print(f"Overall Readiness:    {'READY' if is_ready else 'BLOCKED (Dataset Incomplete or Missing)'}")
+    print("-" * 65)
+    print("Required Directories:")
+    for name, exists in dir_status.items():
+        cnt = video_counts.get(name, 0)
+        status_str = f"EXISTS ({cnt} videos)" if exists and cnt > 0 else ("EMPTY" if exists else "MISSING")
+        print(f"  - {name:<18}: {status_str}")
+    print(f"Official Test List:   {'FOUND' if test_list_exists else 'MISSING'} ({test_list_file.name})")
+    print(f"Total Videos Found:   {total_videos}")
+    if total_videos > 0:
+        print(f"Video Readability:    {'PASSED' if readability_passed else 'FAILED'}")
+        print(f"Test List Resolution: {'PASSED' if test_list_resolved else 'FAILED'}")
+        print(f"Leakage Isolation:    {'PASSED' if leakage_passed else 'FAILED'}")
+    if missing_items:
+        print("-" * 65)
+        print("Blockers:")
+        for item in missing_items:
+            print(f"  [X] {item}")
+    print("=" * 65 + "\n")
+
+    return {
+        "is_ready": is_ready,
+        "dir_status": dir_status,
+        "video_counts": video_counts,
+        "test_list_exists": test_list_exists,
+        "total_videos": total_videos,
+        "readability_passed": readability_passed,
+        "test_list_resolved": test_list_resolved,
+        "leakage_passed": leakage_passed,
+        "missing_items": missing_items,
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description="Validate deepfake dataset integrity.")
     parser.add_argument("--processed-dir", type=str, default="data/processed", help="Path to processed data.")
     parser.add_argument("--raw-dir", type=str, default="data/raw", help="Path to raw dataset directory.")
     parser.add_argument("--test-list", type=str, default=None, help="Path to official test list.")
     parser.add_argument("--check-raw", action="store_true", help="Explicitly validate raw dataset.")
+    parser.add_argument("--check-readiness", action="store_true", help="Check readiness of Celeb-DF v2 raw layout.")
     parser.add_argument("--seq-len", type=int, default=10, help="Expected frames per sequence.")
     parser.add_argument("--img-size", type=int, default=128, help="Expected frame resolution (H=W).")
     parser.add_argument(
@@ -432,6 +576,13 @@ def main():
     args = parser.parse_args()
 
     try:
+        # Check readiness if requested
+        if args.check_readiness:
+            readiness = check_dataset_readiness(raw_dir=args.raw_dir, test_list_path=args.test_list)
+            if not readiness["is_ready"]:
+                sys.exit(1)
+            sys.exit(0)
+
         # Check raw dataset if explicitly requested or if raw-dir contains videos
         if args.check_raw or (args.raw_dir and os.path.exists(args.raw_dir)):
             raw_videos = discover_videos(args.raw_dir)

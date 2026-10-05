@@ -1067,7 +1067,42 @@ def test_preprocessing_fingerprint_force_overwrites(tmp_path):
     assert cfg2["fingerprint"] != fp1
 
 
+def test_check_dataset_readiness(tmp_path):
+    """Test check_dataset_readiness on empty and populated layouts."""
+    from validate_dataset import check_dataset_readiness
+
+    # 1. On empty temp directory, should be blocked
+    res_empty = check_dataset_readiness(raw_dir=str(tmp_path))
+    assert res_empty["is_ready"] is False
+    assert len(res_empty["missing_items"]) > 0
+
+    # 2. Populate required directories
+    (tmp_path / "real" / "Celeb-real").mkdir(parents=True)
+    (tmp_path / "real" / "YouTube-real").mkdir(parents=True)
+    (tmp_path / "fake" / "Celeb-synthesis").mkdir(parents=True)
+
+    res_partial = check_dataset_readiness(raw_dir=str(tmp_path))
+    assert res_partial["is_ready"] is False
+    assert res_partial["test_list_exists"] is False
+
+    # 3. Create dummy videos and test list
+    _make_dummy_video(str(tmp_path / "real" / "Celeb-real" / "id0_0000.mp4"))
+    _make_dummy_video(str(tmp_path / "real" / "YouTube-real" / "00000.mp4"))
+    _make_dummy_video(str(tmp_path / "fake" / "Celeb-synthesis" / "id0_id1_0000.mp4"))
+
+    test_list_file = tmp_path / "List_of_testing_videos.txt"
+    test_list_file.write_text("1 Celeb-real/id0_0000.mp4\n")
+
+    res_ready = check_dataset_readiness(raw_dir=str(tmp_path))
+    assert res_ready["is_ready"] is True
+    assert res_ready["total_videos"] == 3
+    assert res_ready["readability_passed"] is True
+    assert res_ready["test_list_resolved"] is True
+    assert res_ready["leakage_passed"] is True
+
+
 if __name__ == "__main__":
     unittest.main()
+
 
 
