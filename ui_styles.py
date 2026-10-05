@@ -37,13 +37,21 @@ FORENSIC_THEME_CSS = f"""
 }}
 
 /* Global Font and Base Overrides */
+html, body, [class*="css"], .stApp {{
+    background-color: var(--bg-dark);
+}}
+
 html, body, [class*="css"], .stApp, * {{
     font-family: 'Space Grotesk', -apple-system, BlinkMacSystemFont, sans-serif;
-    background-color: var(--bg-dark);
     color: var(--text-primary);
     -webkit-font-smoothing: antialiased !important;
     -moz-osx-font-smoothing: grayscale !important;
     text-rendering: optimizeLegibility !important;
+}}
+
+div[data-st-baseweb-layer-host="true"],
+div[data-st-overlay-root="true"] {{
+    background-color: transparent !important;
 }}
 
 code, kbd, samp, pre,
@@ -266,6 +274,16 @@ code {{
     overflow: hidden;
     border: 1px solid var(--panel-border);
     background: var(--panel-dark);
+}}
+
+video,
+div[data-testid="stVideo"] video {{
+    background-color: var(--panel-dark) !important;
+}}
+
+video::-webkit-media-controls-panel,
+video::-webkit-media-controls-enclosure {{
+    background-color: var(--panel-dark) !important;
 }}
 
 .scanner-overlay {{
