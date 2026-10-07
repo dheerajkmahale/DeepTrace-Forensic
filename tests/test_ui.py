@@ -314,9 +314,9 @@ class TestForbiddenColors:
         from pathlib import Path
         from theme import THEME
 
-        assert THEME["bg_dark"].upper() == "#090D16", f"Expected primary background #090D16, got {THEME['bg_dark']}"
-        assert THEME["panel_dark"].upper() == "#131B2E", f"Expected panel background #131B2E, got {THEME['panel_dark']}"
-        assert THEME["authentic"].upper() == "#10B981", f"Expected authentic green #10B981, got {THEME['authentic']}"
+        assert THEME["bg_dark"].upper() == "#070B12", f"Expected primary background #070B12, got {THEME['bg_dark']}"
+        assert THEME["panel_dark"].upper() == "#111A26", f"Expected panel background #111A26, got {THEME['panel_dark']}"
+        assert THEME["authentic"].upper() == "#22C55E", f"Expected authentic green #22C55E, got {THEME['authentic']}"
         assert THEME["manipulated"].upper() == "#EF4444", f"Expected manipulated coral #EF4444, got {THEME['manipulated']}"
 
         target_files = [
