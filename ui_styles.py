@@ -614,6 +614,364 @@ div[data-testid="stAlert"] {{
     border: 1px solid var(--panel-border) !important;
     color: var(--text-primary) !important;
 }}
+
+/* DeepTrace Forensic Header Styles */
+.deeptrace-header {{
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    background: var(--panel-dark);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    margin-bottom: 24px;
+    box-shadow: 0 4px 18px rgba(42, 18, 72, 0.45);
+}}
+
+.deeptrace-brand-col {{
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}}
+
+.deeptrace-title {{
+    font-size: 1.85rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    line-height: 1.1;
+}}
+
+.deeptrace-sub {{
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-top: 2px;
+}}
+
+.status-online-pill {{
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(139, 92, 246, 0.15);
+    border: 1px solid var(--authentic-lilac);
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--authentic-lilac);
+}}
+
+.status-offline-pill {{
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 100, 61, 0.15);
+    border: 1px solid var(--manipulated-vermilion);
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--manipulated-vermilion);
+}}
+
+/* Upload Hero & Guidelines */
+.hero-box {{
+    background: var(--panel-dark);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 22px 24px;
+    margin-bottom: 22px;
+    box-shadow: 0 4px 16px rgba(42, 18, 72, 0.4);
+}}
+
+.hero-heading {{
+    font-size: 1.55rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 6px 0;
+    letter-spacing: -0.01em;
+}}
+
+.hero-desc {{
+    font-size: 0.94rem;
+    color: var(--text-muted);
+    margin: 0;
+    line-height: 1.5;
+}}
+
+/* Video Metadata Card Grid */
+.video-meta-grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 10px;
+    margin: 14px 0 18px 0;
+}}
+
+.video-meta-card {{
+    background: var(--bg-dark);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 10px 14px;
+}}
+
+.video-meta-label {{
+    font-size: 0.74rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 3px;
+    font-weight: 600;
+}}
+
+.video-meta-value {{
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-family: 'JetBrains Mono', monospace;
+    word-break: break-all;
+}}
+
+/* High-Impact Result Hero Banner */
+.result-hero-card {{
+    background: var(--panel-dark);
+    border-radius: 16px;
+    padding: 26px 28px;
+    margin: 18px 0 24px 0;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 6px 28px rgba(42, 18, 72, 0.6);
+}}
+
+.result-hero-card-real {{
+    border: 2px solid var(--authentic-lilac);
+    background: linear-gradient(180deg, rgba(196, 161, 255, 0.14) 0%, rgba(58, 26, 99, 0.95) 100%);
+}}
+
+.result-hero-card-fake {{
+    border: 2px solid var(--manipulated-vermilion);
+    background: linear-gradient(180deg, rgba(255, 100, 61, 0.16) 0%, rgba(58, 26, 99, 0.95) 100%);
+}}
+
+.result-hero-card-inconclusive {{
+    border: 2px solid var(--inconclusive-gold);
+    background: linear-gradient(180deg, rgba(255, 194, 71, 0.14) 0%, rgba(58, 26, 99, 0.95) 100%);
+}}
+
+.verdict-pill-real {{
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(196, 161, 255, 0.22);
+    border: 1px solid var(--authentic-lilac);
+    color: var(--authentic-lilac);
+    font-size: 1.9rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    padding: 6px 22px;
+    border-radius: 10px;
+    margin-bottom: 12px;
+}}
+
+.verdict-pill-fake {{
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 100, 61, 0.22);
+    border: 1px solid var(--manipulated-vermilion);
+    color: var(--manipulated-vermilion);
+    font-size: 1.9rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    padding: 6px 22px;
+    border-radius: 10px;
+    margin-bottom: 12px;
+}}
+
+.verdict-pill-inconclusive {{
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 194, 71, 0.22);
+    border: 1px solid var(--inconclusive-gold);
+    color: var(--inconclusive-gold);
+    font-size: 1.9rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    padding: 6px 22px;
+    border-radius: 10px;
+    margin-bottom: 12px;
+}}
+
+.prob-metric-row {{
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 16px;
+    margin: 10px 0 16px 0;
+}}
+
+.prob-metric-title {{
+    font-size: 1.05rem;
+    color: var(--text-muted);
+    font-weight: 600;
+}}
+
+.prob-metric-value {{
+    font-size: 2.8rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    font-family: 'Space Grotesk', sans-serif;
+    line-height: 1;
+}}
+
+.prob-metric-thresh {{
+    font-size: 0.95rem;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+}}
+
+/* Secondary Evidence Row */
+.evidence-secondary-row {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--panel-border);
+}}
+
+.evidence-secondary-card {{
+    background: var(--bg-dark);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 8px 12px;
+}}
+
+.evidence-secondary-label {{
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-weight: 600;
+}}
+
+.evidence-secondary-val {{
+    font-size: 0.92rem;
+    color: var(--text-primary);
+    font-weight: 700;
+    margin-top: 2px;
+}}
+
+/* Frame Evidence Viewer Cards */
+.evidence-frame-container {{
+    background: var(--panel-dark);
+    border: 1px solid var(--panel-border);
+    border-radius: 14px;
+    padding: 20px;
+    margin: 20px 0;
+}}
+
+.frame-evidence-card {{
+    background: var(--bg-dark);
+    border: 1px solid var(--panel-border);
+    border-radius: 12px;
+    overflow: hidden;
+    padding: 12px;
+    text-align: center;
+    transition: transform 0.2s ease, border-color 0.2s ease;
+}}
+
+.frame-evidence-card:hover {{
+    border-color: var(--primary-accent);
+    transform: translateY(-2px);
+}}
+
+.frame-evidence-rank {{
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--authentic-lilac);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 8px;
+}}
+
+.frame-evidence-meta {{
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-top: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    line-height: 1.4;
+}}
+
+.frame-evidence-tag {{
+    display: inline-block;
+    background: rgba(139, 92, 246, 0.2);
+    border: 1px solid var(--primary-accent);
+    color: var(--text-primary);
+    font-size: 0.78rem;
+    font-weight: 700;
+    border-radius: 6px;
+    padding: 2px 8px;
+    margin-top: 6px;
+}}
+
+/* Forensic Summary Blocks */
+.summary-block-grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 12px;
+    margin: 16px 0;
+}}
+
+.summary-block-item {{
+    background: var(--panel-dark);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 14px 16px;
+}}
+
+.summary-block-title {{
+    font-size: 0.74rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    margin-bottom: 4px;
+}}
+
+.summary-block-value {{
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}}
+
+/* Disclaimer Banner */
+.forensic-disclaimer-card {{
+    background: rgba(58, 26, 99, 0.7);
+    border: 1px solid var(--panel-border);
+    border-left: 4px solid var(--primary-accent);
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin: 22px 0;
+    font-size: 0.86rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+}}
+
+/* Footer */
+.forensic-footer-bar {{
+    margin-top: 36px;
+    padding-top: 16px;
+    border-top: 1px solid var(--panel-border);
+    text-align: center;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}}
 </style>
 """
 

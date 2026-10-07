@@ -225,18 +225,37 @@ class TestStreamlitAppTest:
 
     def test_real_experiment_disabled_when_model_missing(self):
         """Test that Real Experiment Model is marked unavailable in the sidebar when outputs/best_model.keras is missing."""
+        import unittest.mock
+        real_exists = os.path.exists
+        def mock_exists(p):
+            if "outputs/best_model.keras" in str(p).replace("\\", "/"):
+                return False
+            return real_exists(p)
+
+        with unittest.mock.patch("os.path.exists", side_effect=mock_exists):
+            at = AppTest.from_file("app.py", default_timeout=30)
+            at.run()
+
+            # The model selector selectbox is the first selectbox in the sidebar
+            assert len(at.selectbox) >= 1
+            model_selectbox = at.selectbox[0]
+            options = model_selectbox.options
+
+            unavailable_option = [opt for opt in options if "Unavailable" in opt or "missing" in opt]
+            assert len(unavailable_option) > 0, f"Expected unavailable option in selectbox, found: {options}"
+
+    def test_real_experiment_enabled_when_model_exists(self):
+        """Test that Real Experiment Model is selectable in sidebar when outputs/best_model.keras exists."""
         at = AppTest.from_file("app.py", default_timeout=30)
         at.run()
 
-        # The model selector selectbox is the first selectbox in the sidebar
         assert len(at.selectbox) >= 1
         model_selectbox = at.selectbox[0]
         options = model_selectbox.options
 
-        # Since outputs/best_model.keras does not exist, it must be marked unavailable
-        assert not os.path.exists("outputs/best_model.keras")
-        unavailable_option = [opt for opt in options if "Unavailable" in opt or "missing" in opt]
-        assert len(unavailable_option) > 0, f"Expected unavailable option in selectbox, found: {options}"
+        if os.path.exists("outputs/best_model.keras"):
+            available_option = [opt for opt in options if "Real Experiment Model (outputs/best_model.keras)" in opt]
+            assert len(available_option) > 0, f"Expected available real model option in selectbox, found: {options}"
 
     def test_prototype_banner_appears_for_prototype_model(self):
         """Test that the persistent prototype warning banner is present in rendered markdown."""

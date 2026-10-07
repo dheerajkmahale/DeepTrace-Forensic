@@ -23,6 +23,7 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import (
     accuracy_score,
+    balanced_accuracy_score,
     confusion_matrix,
     f1_score,
     precision_score,
@@ -33,14 +34,15 @@ from sklearn.metrics import (
 import tensorflow as tf
 
 from dataset import resolve_clip_path
+from model import TemporalAttention
 
 
 def compute_metrics(
     y_true: np.ndarray,
     y_scores: np.ndarray,
     threshold: float = 0.5,
-) -> Dict[str, float]:
-    """Compute accuracy, precision, recall, f1, and roc_auc."""
+) -> Dict[str, Any]:
+    """Compute accuracy, precision, recall, f1, roc_auc, balanced_accuracy, real_recall, fake_recall, and confusion matrix."""
     y_true = np.asarray(y_true, dtype=int)
     y_scores = np.asarray(y_scores, dtype=float)
     y_pred = (y_scores >= threshold).astype(int)
@@ -58,12 +60,22 @@ def compute_metrics(
     except Exception:
         auc = float("nan")
 
+    cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+    tn, fp, fn, tp = cm.ravel()
+    real_recall = float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0
+    fake_recall = float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0
+    bal_acc = float(balanced_accuracy_score(y_true, y_pred))
+
     return {
         "accuracy": acc,
         "precision": prec,
         "recall": rec,
         "f1": f1,
         "roc_auc": auc,
+        "balanced_accuracy": bal_acc,
+        "real_recall": real_recall,
+        "fake_recall": fake_recall,
+        "confusion_matrix": cm.tolist(),
         "total_samples": int(len(y_true)),
     }
 
@@ -217,7 +229,8 @@ def evaluate(
     model_path: str = "outputs/best_model.keras",
     processed_dir: str = "data/processed",
     output_dir: str = "outputs",
-    threshold: Optional[float] = 0.5,
+    threshold: Optional[float] = None,
+    threshold_file: Optional[str] = None,
     val_threshold: bool = False,
     batch_size: int = 8,
 ) -> Dict[str, Any]:
@@ -227,7 +240,8 @@ def evaluate(
         model_path: Path to saved Keras model file.
         processed_dir: Directory containing meta.csv and preprocessed clips.
         output_dir: Directory where evaluation artifacts will be written.
-        threshold: Classification decision threshold (default: 0.5).
+        threshold: Classification decision threshold (default: 0.5 if not specified).
+        threshold_file: Path to JSON file containing locked validation threshold.
         val_threshold: If True, tunes decision threshold on validation split.
         batch_size: Batch size for model inference.
 
@@ -250,10 +264,14 @@ def evaluate(
         raise ValueError("No samples found for split='test' in meta.csv. Evaluation requires held-out test split.")
 
     print(f"Loading model from: {model_path}")
-    model = tf.keras.models.load_model(model_path)
+    model = tf.keras.models.load_model(model_path, custom_objects={"TemporalAttention": TemporalAttention})
 
-    # Determine decision threshold: either 0.5 (or specified) or tuned on validation split
-    if val_threshold:
+    # Determine decision threshold
+    auto_th_file = threshold_file or os.path.join(output_dir, "final_threshold.json")
+    if threshold is not None:
+        chosen_threshold = float(threshold)
+        threshold_source = "fixed_0.5" if chosen_threshold == 0.5 else "fixed_specified"
+    elif val_threshold:
         chosen_threshold = find_optimal_validation_threshold(
             model=model,
             meta_df=meta_df,
@@ -261,9 +279,12 @@ def evaluate(
             batch_size=batch_size,
         )
         threshold_source = "validation_split"
-    elif threshold is not None:
-        chosen_threshold = float(threshold)
-        threshold_source = "fixed_0.5" if chosen_threshold == 0.5 else "fixed_specified"
+    elif os.path.exists(auto_th_file):
+        with open(auto_th_file, "r") as f:
+            th_data = json.load(f)
+            chosen_threshold = float(th_data.get("threshold", 0.5))
+            threshold_source = f"locked_validation_{os.path.basename(auto_th_file)}"
+        print(f"Loaded locked validation threshold {chosen_threshold:.4f} from {auto_th_file}")
     else:
         chosen_threshold = 0.5
         threshold_source = "fixed_0.5"
@@ -431,7 +452,8 @@ def main():
     parser.add_argument("--model-path", type=str, default="outputs/best_model.keras", help="Path to model.")
     parser.add_argument("--processed-dir", type=str, default="data/processed", help="Path to processed data.")
     parser.add_argument("--output-dir", type=str, default="outputs", help="Directory for output files.")
-    parser.add_argument("--threshold", type=float, default=0.5, help="Classification decision threshold (default: 0.5).")
+    parser.add_argument("--threshold", type=float, default=None, help="Classification decision threshold.")
+    parser.add_argument("--threshold-file", type=str, default=None, help="Path to JSON file with locked threshold.")
     parser.add_argument(
         "--val-threshold",
         action="store_true",
@@ -446,6 +468,7 @@ def main():
         processed_dir=args.processed_dir,
         output_dir=args.output_dir,
         threshold=args.threshold,
+        threshold_file=args.threshold_file,
         val_threshold=args.val_threshold,
         batch_size=args.batch_size,
     )

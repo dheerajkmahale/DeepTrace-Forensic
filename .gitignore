@@ -31,14 +31,22 @@ htmlcov/
 *.mkv
 *.webm
 
+# Archives & datasets
+*.zip
+*.tar.gz
+*.tar
+*.7z
+
 # Project outputs
 outputs/
 
 # Data directories (ignore raw video files, processed and demo data, but keep .gitkeep)
 data/processed/
+data/processed_v2/
 data/demo/
 data/demo/uploads/
 uploads/
+*.log
 data/raw/**
 !data/raw/**/
 !data/raw/**/.gitkeep

@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
 import tensorflow as tf
 
+from model import TemporalAttention
 from preprocess import extract_clips_from_video, get_face_cascade
 
 
@@ -117,7 +118,7 @@ def predict_video(
     clips_array = np.array(clips, dtype=np.uint8)
 
     # Load model and predict
-    model = tf.keras.models.load_model(model_path)
+    model = tf.keras.models.load_model(model_path, custom_objects={"TemporalAttention": TemporalAttention})
     predictions = model.predict(clips_array, verbose=0).flatten()
 
     p_fake = float(np.mean(predictions))

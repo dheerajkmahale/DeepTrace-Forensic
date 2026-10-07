@@ -100,6 +100,7 @@ def get_dataset(
     img_size: int = 128,
     is_training: Optional[bool] = None,
     seed: int = 42,
+    balanced_batches: bool = True,
 ) -> Tuple[tf.data.Dataset, int]:
     """Create a tf.data.Dataset for a specified split using a generator.
 
@@ -114,6 +115,8 @@ def get_dataset(
         is_training: Whether to enable training augmentations and shuffling.
             If None, defaults to (split == "train").
         seed: Random seed for generator shuffling and augmentations.
+        balanced_batches: If True and is_training, ensures each batch contains
+            an equal proportion of real and fake samples to prevent class collapse.
 
     Returns:
         Tuple of (batched_dataset, num_samples).
@@ -135,6 +138,62 @@ def get_dataset(
 
     def data_generator():
         rng = np.random.RandomState(seed)
+
+        if is_training and balanced_batches:
+            real_records = [r for r in clip_records if r[1] == 0]
+            fake_records = [r for r in clip_records if r[1] == 1]
+
+            if len(real_records) > 0 and len(fake_records) > 0:
+                n_batches = math.ceil(num_samples / batch_size)
+                r_perm = rng.permutation(len(real_records))
+                f_perm = rng.permutation(len(fake_records))
+                r_idx = 0
+                f_idx = 0
+
+                samples_yielded = 0
+                for b_i in range(n_batches):
+                    # For this batch, determine size
+                    curr_batch_size = min(batch_size, num_samples - samples_yielded)
+                    if curr_batch_size <= 0:
+                        break
+
+                    n_real = curr_batch_size // 2
+                    n_fake = curr_batch_size - n_real
+
+                    batch_items = []
+                    for _ in range(n_real):
+                        if r_idx >= len(r_perm):
+                            r_perm = rng.permutation(len(real_records))
+                            r_idx = 0
+                        batch_items.append(real_records[r_perm[r_idx]])
+                        r_idx += 1
+
+                    for _ in range(n_fake):
+                        if f_idx >= len(f_perm):
+                            f_perm = rng.permutation(len(fake_records))
+                            f_idx = 0
+                        batch_items.append(fake_records[f_perm[f_idx]])
+                        f_idx += 1
+
+                    # Shuffle within batch so real/fake are intermixed
+                    rng.shuffle(batch_items)
+
+                    for clip_file, label in batch_items:
+                        try:
+                            clip = np.load(clip_file)
+                        except Exception:
+                            clip = np.zeros((seq_len, img_size, img_size, 3), dtype=np.uint8)
+
+                        if clip.shape != (seq_len, img_size, img_size, 3):
+                            clip = np.zeros((seq_len, img_size, img_size, 3), dtype=np.uint8)
+
+                        clip = augment_clip(clip, rng)
+                        yield clip.astype(np.uint8), np.float32(label)
+                        samples_yielded += 1
+
+                return
+
+        # Sequential / Standard Generator for Validation, Test, or Unbalanced
         indices = np.arange(len(clip_records))
         if is_training:
             rng.shuffle(indices)
@@ -143,13 +202,10 @@ def get_dataset(
             clip_file, label = clip_records[idx]
             try:
                 clip = np.load(clip_file)
-            except Exception as e:
-                # If file cannot be loaded, substitute zeros with proper shape
+            except Exception:
                 clip = np.zeros((seq_len, img_size, img_size, 3), dtype=np.uint8)
 
-            # Ensure expected shape and dtype
             if clip.shape != (seq_len, img_size, img_size, 3):
-                # Resize/reshape if needed
                 clip = np.zeros((seq_len, img_size, img_size, 3), dtype=np.uint8)
 
             if is_training:

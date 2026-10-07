@@ -1101,6 +1101,79 @@ def test_check_dataset_readiness(tmp_path):
     assert res_ready["leakage_passed"] is True
 
 
+def test_temporal_attention_layer():
+    """Test TemporalAttention layer forward pass and attention weight extraction."""
+    from model import TemporalAttention
+    import tensorflow as tf
+    import numpy as np
+
+    layer = TemporalAttention(units=32)
+    inputs = tf.random.normal((4, 10, 64))
+    context = layer(inputs)
+
+    assert context.shape == (4, 64)
+
+    weights = layer.compute_attention(inputs)
+    assert weights.shape == (4, 10)
+    # Check that weights sum to 1.0 along sequence dimension
+    row_sums = tf.reduce_sum(weights, axis=-1).numpy()
+    np.testing.assert_allclose(row_sums, np.ones(4), atol=1e-5)
+
+
+def test_build_model_v2_architecture():
+    """Test build_model_v2 input shape, output shape (batch_size, 1), and range [0, 1]."""
+    from model import build_model_v2
+    import numpy as np
+
+    model = build_model_v2(seq_len=6, img_size=64, lstm_units=32, attention_units=16)
+    dummy_input = np.random.randint(0, 256, size=(2, 6, 64, 64, 3), dtype=np.uint8)
+    preds = model.predict(dummy_input, verbose=0)
+
+    assert preds.shape == (2, 1)
+    assert np.all(preds >= 0.0) and np.all(preds <= 1.0)
+    assert model.get_layer("temporal_attention") is not None
+    assert model.get_layer("temporal_bilstm") is not None
+
+
+def test_extract_temporal_attention():
+    """Test extract_temporal_attention extracts valid attention coefficients."""
+    from model import build_model_v2, extract_temporal_attention
+    import numpy as np
+
+    model = build_model_v2(seq_len=8, img_size=64, lstm_units=32, attention_units=16)
+    dummy_clips = np.random.randint(0, 256, size=(3, 8, 64, 64, 3), dtype=np.uint8)
+
+    weights = extract_temporal_attention(model, dummy_clips)
+    assert weights is not None
+    assert weights.shape == (3, 8)
+    np.testing.assert_allclose(weights.sum(axis=1), np.ones(3), atol=1e-5)
+
+    # Test single clip shape (8, 64, 64, 3)
+    single_clip = dummy_clips[0]
+    single_weights = extract_temporal_attention(model, single_clip)
+    assert single_weights is not None
+    assert single_weights.shape == (8,)
+    np.testing.assert_allclose(single_weights.sum(), 1.0, atol=1e-5)
+
+
+def test_transfer_cnn_weights():
+    """Test transfer_cnn_weights copies convolutional layer parameters."""
+    from model import build_model, build_model_v2, transfer_cnn_weights
+    import numpy as np
+
+    m1 = build_model(seq_len=5, img_size=64, lstm_units=16)
+    m2 = build_model_v2(seq_len=5, img_size=64, lstm_units=16)
+
+    success = transfer_cnn_weights(m1, m2)
+    assert success is True
+
+    w1 = m1.get_layer("time_distributed_cnn").layer.get_weights()
+    w2 = m2.get_layer("time_distributed_cnn").layer.get_weights()
+    assert len(w1) == len(w2)
+    for p1, p2 in zip(w1, w2):
+        np.testing.assert_allclose(p1, p2)
+
+
 if __name__ == "__main__":
     unittest.main()
 

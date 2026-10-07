@@ -629,6 +629,13 @@ def extract_clips_with_diagnostics(
         cap.release()
         return None, "too short", {"total_frames": total_frames}
 
+    fps = float(cap.get(cv2.CAP_PROP_FPS))
+    if fps <= 0 or np.isnan(fps):
+        fps = 25.0
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    duration_sec = total_frames / fps if fps > 0 else 0.0
+
     face_cascade = None if no_face_detect else get_face_cascade()
     valid_clips: List[np.ndarray] = []
     any_frame_read = False
@@ -636,6 +643,7 @@ def extract_clips_with_diagnostics(
     total_frames_inspected = 0
     fallback_used = False
     sample_crops: List[np.ndarray] = []
+    clip_frames_meta: List[Dict[str, Any]] = []
 
     for c in range(clips_per_video):
         seg_start = int(c * total_frames / clips_per_video)
@@ -669,6 +677,16 @@ def extract_clips_with_diagnostics(
                     sample_crops.append(rgb)
             valid_clips.append(np.array(processed_frames, dtype=np.uint8))
             fallback_used = True
+            if c == 0 and not clip_frames_meta:
+                for step_i in range(len(processed_frames)):
+                    f_idx = int(frame_indices[step_i])
+                    ts_val = float(f_idx / fps) if fps > 0 else 0.0
+                    clip_frames_meta.append({
+                        "step": step_i,
+                        "frame_idx": f_idx,
+                        "timestamp": ts_val,
+                        "crop": processed_frames[step_i],
+                    })
         else:
             bboxes = []
             for f in raw_frames:
@@ -709,16 +727,31 @@ def extract_clips_with_diagnostics(
                     sample_crops.append(rgb)
 
             valid_clips.append(np.array(processed_frames, dtype=np.uint8))
+            if c == 0 and not clip_frames_meta:
+                for step_i in range(len(processed_frames)):
+                    f_idx = int(frame_indices[step_i])
+                    ts_val = float(f_idx / fps) if fps > 0 else 0.0
+                    clip_frames_meta.append({
+                        "step": step_i,
+                        "frame_idx": f_idx,
+                        "timestamp": ts_val,
+                        "crop": processed_frames[step_i],
+                    })
 
     cap.release()
 
     diagnostics = {
         "total_frames": total_frames,
+        "fps": fps,
+        "width": width,
+        "height": height,
+        "duration_sec": duration_sec,
         "frames_inspected": total_frames_inspected,
         "detected_faces_count": detected_faces_count,
         "face_detection_rate": (detected_faces_count / max(1, total_frames_inspected)) if not no_face_detect else 0.0,
         "fallback_used": fallback_used,
         "sample_crops": sample_crops,
+        "clip_frames_meta": clip_frames_meta,
     }
 
     if len(valid_clips) == 0:
@@ -729,3 +762,75 @@ def extract_clips_with_diagnostics(
         return None, "too short", diagnostics
 
     return np.array(valid_clips, dtype=np.uint8), None, diagnostics
+
+
+def get_video_metadata(video_path: str) -> Dict[str, Any]:
+    """Inspect video file metadata without performing heavy extraction."""
+    if not os.path.exists(video_path):
+        return {}
+    size_bytes = os.path.getsize(video_path)
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return {
+            "filename": os.path.basename(video_path),
+            "filesize_bytes": size_bytes,
+            "filesize_mb": size_bytes / (1024 * 1024),
+            "readable": False,
+        }
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = float(cap.get(cv2.CAP_PROP_FPS))
+    if fps <= 0 or np.isnan(fps):
+        fps = 25.0
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap.release()
+    duration = total_frames / fps if fps > 0 else 0.0
+    return {
+        "filename": os.path.basename(video_path),
+        "filesize_bytes": size_bytes,
+        "filesize_mb": size_bytes / (1024 * 1024),
+        "total_frames": total_frames,
+        "fps": round(fps, 2),
+        "width": width,
+        "height": height,
+        "resolution": f"{width}x{height}" if width > 0 and height > 0 else "Unknown",
+        "duration_sec": round(duration, 2),
+        "readable": True,
+    }
+
+
+def build_temporal_attention_chart(
+    attention_scores: np.ndarray,
+    top_indices: Optional[List[int]] = None,
+) -> go.Figure:
+    """Create a Plotly bar chart displaying temporal attention coefficients across frames."""
+    scores = np.asarray(attention_scores, dtype=float).flatten()
+    seq_len = len(scores)
+    labels = [f"Frame {i+1}" for i in range(seq_len)]
+
+    top_set = set(top_indices) if top_indices is not None else set(np.argsort(scores)[::-1][:3])
+    colors = [THEME["manipulated"] if i in top_set else THEME["primary_accent"] for i in range(seq_len)]
+
+    fig = go.Figure(
+        go.Bar(
+            x=labels,
+            y=scores,
+            marker_color=colors,
+            text=[f"{s:.3f}" for s in scores],
+            textposition="auto",
+            textfont=dict(color=THEME["text_primary"]),
+        )
+    )
+
+    fig.update_layout(
+        template=None,
+        paper_bgcolor=THEME["panel_dark"],
+        plot_bgcolor=THEME["panel_dark"],
+        margin=dict(l=20, r=20, t=30, b=30),
+        height=220,
+        font=dict(family="Space Grotesk, sans-serif", color=THEME["text_muted"], size=11),
+        xaxis=dict(gridcolor="rgba(91, 46, 145, 0.2)", tickfont=dict(color=THEME["text_muted"], size=10)),
+        yaxis=dict(gridcolor="rgba(91, 46, 145, 0.2)", title="Attention Weight", tickfont=dict(color=THEME["text_muted"], size=10)),
+    )
+    return fig
+

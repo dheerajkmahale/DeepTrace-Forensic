@@ -29,7 +29,7 @@ OUTPUT_DIR = Path("outputs/screenshots")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 # Also copy to artifact directory if available
-ARTIFACT_DIR = Path(r"C:\Users\dheer\.gemini\antigravity-ide\brain\35cae5b8-5ea6-49be-84c3-219dd6a58af1\screenshots")
+ARTIFACT_DIR = Path(os.environ.get("ARTIFACT_DIR", os.path.join("outputs", "screenshots")))
 ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
 
 APP_URL = "http://localhost:8501"

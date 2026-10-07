@@ -130,6 +130,184 @@ def set_seed(seed: int = 42) -> None:
 
 
 
+from sklearn.metrics import (
+    accuracy_score,
+    balanced_accuracy_score,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+)
+
+
+class ValidationDiagnosticsCallback(tf.keras.callbacks.Callback):
+    """Monitors validation metrics, searches optimal threshold, and prevents single-class collapse."""
+
+    def __init__(
+        self,
+        val_ds: tf.data.Dataset,
+        val_labels: np.ndarray,
+        output_dir: str,
+        best_model_path: str,
+        patience: int = 4,
+    ):
+        super().__init__()
+        self.val_ds = val_ds
+        self.val_labels = np.asarray(val_labels, dtype=int)
+        self.output_dir = output_dir
+        self.best_model_path = best_model_path
+        self.patience = patience
+        self.best_score = -1.0
+        self.best_epoch = -1
+        self.best_metrics = {}
+        self.wait = 0
+
+    def on_epoch_end(self, epoch, logs=None):
+        logs = logs or {}
+        # Run inference across validation dataset
+        preds = self.model.predict(self.val_ds, verbose=0).flatten()
+        y_true = self.val_labels
+
+        try:
+            auc = float(roc_auc_score(y_true, preds))
+        except Exception:
+            auc = 0.5
+
+        # Search threshold maximizing balanced accuracy
+        thresholds = np.linspace(0.10, 0.90, 81)
+        best_th = 0.5
+        best_bacc = -1.0
+        best_macro_f1 = -1.0
+
+        for th in thresholds:
+            y_pred = (preds >= th).astype(int)
+            cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+            tn, fp, fn, tp = cm.ravel()
+            rr = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+            fr = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+            bacc = 0.5 * (rr + fr)
+            if bacc > best_bacc:
+                best_bacc = bacc
+                best_th = float(th)
+
+        # Compute all metrics at best_th
+        y_pred = (preds >= best_th).astype(int)
+        cm = confusion_matrix(y_true, y_pred, labels=[0, 1])
+        tn, fp, fn, tp = cm.ravel()
+        real_recall = float(tn / (tn + fp)) if (tn + fp) > 0 else 0.0
+        fake_recall = float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0
+        acc = float(accuracy_score(y_true, y_pred))
+        prec = float(precision_score(y_true, y_pred, zero_division=0))
+        f1 = float(f1_score(y_true, y_pred, zero_division=0))
+        macro_f1 = float(f1_score(y_true, y_pred, average="macro", zero_division=0))
+        bal_acc = float(balanced_accuracy_score(y_true, y_pred))
+
+        # Also at fixed 0.50 for reference
+        y_pred_05 = (preds >= 0.5).astype(int)
+        cm_05 = confusion_matrix(y_true, y_pred_05, labels=[0, 1])
+        tn05, fp05, fn05, tp05 = cm_05.ravel()
+        rr_05 = float(tn05 / (tn05 + fp05)) if (tn05 + fp05) > 0 else 0.0
+        fr_05 = float(tp05 / (tp05 + fn05)) if (tp05 + fn05) > 0 else 0.0
+
+        p_min = float(preds.min())
+        p_max = float(preds.max())
+        p_mean = float(preds.mean())
+        p_std = float(preds.std())
+
+        print("\n" + "=" * 65)
+        print(f"VALIDATION DIAGNOSTICS (Epoch {epoch + 1})")
+        print("=" * 65)
+        print(f"Probability Distribution: min={p_min:.4f}, max={p_max:.4f}, mean={p_mean:.4f}, std={p_std:.4f}")
+        print(f"Fixed (0.50): Real Recall={rr_05:.4f}, Fake Recall={fr_05:.4f}")
+        print(f"Optimal Validation Threshold: {best_th:.4f}")
+        print(f"  Accuracy:          {acc:.4f}")
+        print(f"  Balanced Accuracy: {bal_acc:.4f}")
+        print(f"  Precision:         {prec:.4f}")
+        print(f"  Recall (Fake):     {fake_recall:.4f}")
+        print(f"  REAL Recall:       {real_recall:.4f}")
+        print(f"  F1 Score:          {f1:.4f} (Macro F1: {macro_f1:.4f})")
+        print(f"  ROC-AUC:           {auc:.4f}")
+        print(f"  Confusion Matrix:  [[TN={tn}, FP={fp}], [FN={fn}, TP={tp}]]")
+
+        # Sanity Checks
+        is_healthy = (
+            real_recall > 0.0
+            and fake_recall > 0.0
+            and p_std > 0.01
+            and (tn + tp) > 0
+            and (fp + fn) < len(y_true)
+        )
+        if not is_healthy:
+            print("  [SANITY CHECK] Degenerate/single-class output detected.")
+        else:
+            print("  [SANITY CHECK PASSED] Both classes discriminated successfully.")
+
+        epoch_metrics = {
+            "epoch": epoch + 1,
+            "threshold": best_th,
+            "accuracy": acc,
+            "balanced_accuracy": bal_acc,
+            "precision": prec,
+            "recall": fake_recall,
+            "real_recall": real_recall,
+            "fake_recall": fake_recall,
+            "f1": f1,
+            "macro_f1": macro_f1,
+            "roc_auc": auc,
+            "confusion_matrix": cm.tolist(),
+            "prob_distribution": {
+                "min": p_min,
+                "max": p_max,
+                "mean": p_mean,
+                "std": p_std,
+            },
+            "fixed_05": {
+                "real_recall": rr_05,
+                "fake_recall": fr_05,
+                "confusion_matrix": cm_05.tolist(),
+            },
+        }
+
+        # Check for improvement: maximize combined balanced accuracy and ROC-AUC
+        score_to_maximize = bal_acc + auc
+        if is_healthy and score_to_maximize > self.best_score:
+            print(f"  >>> New best validation performance ({score_to_maximize:.4f} > {self.best_score:.4f}). Saving model! <<<")
+            self.best_score = score_to_maximize
+            self.best_epoch = epoch + 1
+            self.best_metrics = epoch_metrics
+            self.wait = 0
+
+            # Save model checkpoint
+            self.model.save(self.best_model_path)
+
+            # Save locked threshold
+            th_path = os.path.join(self.output_dir, "final_threshold.json")
+            with open(th_path, "w") as f:
+                json.dump({
+                    "threshold": best_th,
+                    "balanced_accuracy": bal_acc,
+                    "macro_f1": macro_f1,
+                    "roc_auc": auc,
+                    "epoch": epoch + 1,
+                    "real_recall": real_recall,
+                    "fake_recall": fake_recall,
+                }, f, indent=2)
+
+            # Save validation metrics
+            val_metrics_path = os.path.join(self.output_dir, "final_validation_metrics.json")
+            with open(val_metrics_path, "w") as f:
+                json.dump(epoch_metrics, f, indent=2)
+        else:
+            self.wait += 1
+            print(f"  No improvement for {self.wait}/{self.patience} epochs.")
+            if self.wait >= self.patience:
+                print(f"  Early stopping triggered after {self.wait} epochs without improvement.")
+                self.model.stop_training = True
+
+        print("=" * 65 + "\n")
+
+
 def train_model(
     processed_dir: str = "data/processed",
     output_dir: str = "outputs",
@@ -137,36 +315,19 @@ def train_model(
     img_size: int = 128,
     backbone: str = "light",
     pretrained: bool = False,
-    epochs: int = 15,
-    batch_size: int = 8,
-    lr: float = 1e-3,
+    epochs: int = 5,
+    batch_size: int = 16,
+    lr: float = 5e-4,
     lstm_units: int = 128,
     dropout: float = 0.4,
     seed: int = 42,
-    patience: int = 5,
+    patience: int = 4,
     verbose: int = 2,
+    steps_per_epoch: Optional[int] = None,
+    val_steps: Optional[int] = None,
+    balanced_batches: bool = True,
 ) -> Dict[str, Any]:
-    """Train the deepfake detection model.
-
-    Args:
-        processed_dir: Directory containing meta.csv and preprocessed clips.
-        output_dir: Directory to save best_model.keras and history.
-        seq_len: Frames per clip.
-        img_size: Frame spatial resolution.
-        backbone: Backbone feature extractor ("light" or "mobilenetv2").
-        pretrained: Whether to use ImageNet weights for MobileNetV2.
-        epochs: Maximum number of training epochs.
-        batch_size: Batch size for training and validation.
-        lr: Initial learning rate for Adam optimizer.
-        lstm_units: Hidden units for LSTM layer.
-        dropout: Dropout rate.
-        seed: Random seed.
-        patience: Early stopping patience epochs.
-        verbose: Verbosity level for model.fit.
-
-    Returns:
-        Dict with paths to saved artifacts and training history.
-    """
+    """Train the deepfake detection model with balanced training and validation diagnostics."""
     set_seed(seed)
     os.makedirs(output_dir, exist_ok=True)
 
@@ -190,11 +351,11 @@ def train_model(
     if len(train_df) == 0:
         raise ValueError("No training samples found in meta.csv for split='train'.")
 
-    # Compute dynamic balanced class weights from training labels
+    # Dynamic class weights
     class_weight_dict = compute_class_weights(train_df["label"].values)
     print(f"Computed training class weights: {class_weight_dict}")
 
-    # Save outputs/run_info.json
+    # Save run_info.json
     cfg = Config(
         seq_len=seq_len,
         img_size=img_size,
@@ -230,6 +391,7 @@ def train_model(
         img_size=img_size,
         is_training=True,
         seed=seed,
+        balanced_batches=balanced_batches,
     )
 
     has_val = len(val_df) > 0
@@ -244,6 +406,7 @@ def train_model(
             img_size=img_size,
             is_training=False,
             seed=seed,
+            balanced_batches=False,
         )
 
     # Build and compile model
@@ -263,49 +426,60 @@ def train_model(
 
     best_model_path = os.path.join(output_dir, "best_model.keras")
 
-    # Callbacks: ALL THREE MUST MONITOR val_loss (mode='min') when validation data is available
     callbacks = []
-    monitor_metric = "val_loss" if has_val else "loss"
 
-    checkpoint_cb = tf.keras.callbacks.ModelCheckpoint(
-        filepath=best_model_path,
-        monitor=monitor_metric,
-        mode="min",
-        save_best_only=True,
-        verbose=1,
-    )
-    callbacks.append(checkpoint_cb)
+    # Batch progress logger
+    class BatchProgressLogger(tf.keras.callbacks.Callback):
+        def on_train_batch_end(self, batch, logs=None):
+            logs = logs or {}
+            step_str = f"{batch + 1}/{steps_per_epoch}" if steps_per_epoch else f"{batch + 1}"
+            if (batch + 1) % 50 == 0 or (steps_per_epoch and (batch + 1) == steps_per_epoch):
+                loss = logs.get("loss", 0.0)
+                acc = logs.get("accuracy", 0.0)
+                auc = logs.get("auc", 0.0)
+                print(f"  [Step {step_str}] loss: {loss:.4f} - acc: {acc:.4f} - auc: {auc:.4f}", flush=True)
 
-    early_stopping_cb = tf.keras.callbacks.EarlyStopping(
-        monitor=monitor_metric,
-        mode="min",
-        patience=patience,
-        restore_best_weights=True,
-        verbose=1,
-    )
-    callbacks.append(early_stopping_cb)
+    callbacks.append(BatchProgressLogger())
 
-    reduce_lr_cb = tf.keras.callbacks.ReduceLROnPlateau(
-        monitor=monitor_metric,
-        mode="min",
-        factor=0.5,
-        patience=max(2, patience // 2),
-        min_lr=1e-6,
-        verbose=1,
-    )
-    callbacks.append(reduce_lr_cb)
+    # Learning rate scheduler
+    if has_val:
+        reduce_lr_cb = tf.keras.callbacks.ReduceLROnPlateau(
+            monitor="val_loss",
+            mode="min",
+            factor=0.5,
+            patience=2,
+            min_lr=1e-6,
+            verbose=1,
+        )
+        callbacks.append(reduce_lr_cb)
 
-    print(f"\nStarting training for {epochs} epochs (monitoring '{monitor_metric}', mode='min')...")
+        # Validation Diagnostics & Model Locking Callback
+        val_cb = ValidationDiagnosticsCallback(
+            val_ds=val_ds,
+            val_labels=val_df["label"].values,
+            output_dir=output_dir,
+            best_model_path=best_model_path,
+            patience=patience,
+        )
+        callbacks.append(val_cb)
+
+    if steps_per_epoch is not None:
+        train_ds = train_ds.repeat()
+    if val_steps is not None and val_ds is not None:
+        val_ds = val_ds.repeat()
+
+    print(f"\nStarting training for {epochs} epochs (balanced_batches={balanced_batches})...")
     history = model.fit(
         train_ds,
         validation_data=val_ds,
         epochs=epochs,
-        class_weight=class_weight_dict,
+        steps_per_epoch=steps_per_epoch,
+        validation_steps=val_steps,
         callbacks=callbacks,
         verbose=verbose,
     )
 
-    # Ensure best_model.keras exists even if checkpoint callback did not trigger save
+    # Ensure best_model.keras exists
     if not os.path.exists(best_model_path):
         model.save(best_model_path)
 
@@ -332,10 +506,16 @@ def train_model(
         "dropout": dropout,
         "seed": seed,
         "class_weights": class_weight_dict,
+        "balanced_batches": balanced_batches,
         "best_model_path": best_model_path,
     }
     train_config_path = os.path.join(output_dir, "train_config.json")
     with open(train_config_path, "w") as f:
+        json.dump(config_dict, f, indent=2)
+
+    # Save final_training_config.json
+    final_train_config_path = os.path.join(output_dir, "final_training_config.json")
+    with open(final_train_config_path, "w") as f:
         json.dump(config_dict, f, indent=2)
 
     print(f"\nTraining completed.")
@@ -360,10 +540,12 @@ def main():
     parser.add_argument("--img-size", type=int, default=128, help="Frame resolution (H=W).")
     parser.add_argument("--backbone", type=str, default="light", choices=["light", "mobilenetv2"], help="CNN backbone.")
     parser.add_argument("--pretrained", action="store_true", help="Use ImageNet pretrained weights for MobileNetV2.")
-    parser.add_argument("--epochs", type=int, default=15, help="Number of training epochs.")
-    parser.add_argument("--batch-size", type=int, default=8, help="Batch size for training.")
-    parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate for Adam.")
+    parser.add_argument("--epochs", type=int, default=5, help="Number of training epochs.")
+    parser.add_argument("--batch-size", type=int, default=16, help="Batch size for training.")
+    parser.add_argument("--lr", type=float, default=5e-4, help="Learning rate for Adam.")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility.")
+    parser.add_argument("--steps-per-epoch", type=int, default=None, help="Batches per training epoch.")
+    parser.add_argument("--val-steps", type=int, default=None, help="Batches per validation epoch.")
 
     args = parser.parse_args()
 
@@ -378,6 +560,8 @@ def main():
         batch_size=args.batch_size,
         lr=args.lr,
         seed=args.seed,
+        steps_per_epoch=args.steps_per_epoch,
+        val_steps=args.val_steps,
     )
 
 
