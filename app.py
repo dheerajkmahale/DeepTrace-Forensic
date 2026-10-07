@@ -561,7 +561,10 @@ with tab_analyze:
                         time.sleep(0.1)
 
                         st.write("6. Analyzing temporal patterns with BiLSTM & Temporal Attention...")
-                        predictions = model.predict(clips_arr, verbose=0).flatten()
+                        try:
+                            predictions = model.predict(clips_arr, verbose=0).flatten()
+                        except Exception:
+                            predictions = np.array(model(clips_arr, training=False)).flatten()
                         p_fake = float(np.mean(predictions))
                         clip_probs = [float(p) for p in predictions]
 
@@ -969,7 +972,10 @@ with tab_batch:
                         "Error Details": f"Extraction error: {err}",
                     })
                 else:
-                    preds = model.predict(clips_arr, verbose=0).flatten()
+                    try:
+                        preds = model.predict(clips_arr, verbose=0).flatten()
+                    except Exception:
+                        preds = np.array(model(clips_arr, training=False)).flatten()
                     p_fake = float(np.mean(preds))
                     v_res = compute_verdict(p_fake, threshold, inconclusive_range)
 

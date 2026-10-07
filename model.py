@@ -256,7 +256,10 @@ def extract_temporal_attention(
 
     try:
         feat_model = tf.keras.Model(inputs=model.input, outputs=attn_layer.input)
-        recurrent_feats = feat_model.predict(clips_arr, verbose=0)
+        try:
+            recurrent_feats = feat_model.predict(clips_arr, verbose=0)
+        except Exception:
+            recurrent_feats = feat_model(clips_arr, training=False)
         weights = attn_layer.compute_attention(recurrent_feats)
         weights_np = weights.numpy() if hasattr(weights, "numpy") else np.array(weights)
         if is_single:
