@@ -37,18 +37,17 @@ def html_block(html_str: str) -> str:
 
 
 def render_custom_video_player(video_path: str) -> str:
-    """Render an accessible HTML5 video player conforming to the Ultraviolet Forensics palette.
+    """Render an accessible HTML5 video player conforming to the SaaS reference theme.
 
-    Replaces native browser controls (which introduce near-black pixels in Blink shadow DOM)
-    with a fully-themed accessible plum/violet control bar.
+    Replaces native browser controls with a custom dark navy / cyan control bar.
 
     Features:
-    - <video> element WITHOUT native controls (object-fit: contain, background #3A1A63).
-    - Fully-plum/violet control bar (#2A1248 background, #5B2E91 border).
-    - Keyboard-accessible Play/Pause button (#8B5CF6 accent) with aria-label.
+    - <video> element WITHOUT native controls (object-fit: contain, dark panel background).
+    - Modern control bar with subtle borders and styled controls.
+    - Keyboard-accessible Play/Pause button with aria-label.
     - Keyboard-accessible timeline scrubber range input with aria-label.
-    - Monospace timestamp display (#F6EEFF lilac-white, aria-label).
-    - File size guard: files > 15MB display a plum-framed first-frame poster with notice.
+    - Monospace timestamp display with aria-label.
+    - File size guard: files > 15MB display a themed first-frame poster with notice.
     """
     if not os.path.exists(video_path):
         return html_block(f"""
@@ -264,7 +263,7 @@ def compute_verdict(
         label = "AUTHENTIC"
         icon = "✓"
         status = "real"
-        color = THEME["authentic"]  # Lilac (#C4A1FF)
+        color = THEME["authentic"]  # Emerald green (#10B981)
         if p_fake <= 0.15:
             confidence = f"High confidence authentic sequence ({p_real:.1%} real) with strong temporal consistency."
         else:
@@ -375,13 +374,13 @@ def build_html_report(analysis_data: Dict[str, Any]) -> str:
             border: 1px solid {THEME['panel_border']};
             border-radius: 12px;
             padding: 30px;
-            box-shadow: 0 8px 32px rgba(42, 18, 72, 0.6);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
         }}
         h1 {{ margin: 0 0 4px 0; color: {THEME['text_primary']}; font-size: 1.8rem; }}
         .subtitle {{ color: {THEME['text_muted']}; font-size: 0.95rem; margin-bottom: 20px; }}
         .verdict-card {{
             border: 2px solid {color};
-            background: rgba(58, 26, 99, 0.9);
+            background: rgba(19, 27, 46, 0.9);
             border-radius: 10px;
             padding: 20px;
             text-align: center;
@@ -485,7 +484,7 @@ def build_probability_gauge(
     inconclusive_low: float = 0.40,
     inconclusive_high: float = 0.60,
 ) -> go.Figure:
-    """Create a sleek Plotly gauge indicator reflecting the Ultraviolet Forensics theme."""
+    """Create a sleek Plotly gauge indicator reflecting the reference forensic theme."""
     p_fake = float(max(0.0, min(1.0, p_fake)))
     low_band, high_band = sorted([inconclusive_low, inconclusive_high])
 
@@ -495,7 +494,7 @@ def build_probability_gauge(
             value=p_fake * 100.0,
             number={"suffix": "%", "font": {"color": THEME["text_primary"], "size": 36, "family": "Space Grotesk, sans-serif"}},
             title={
-                "text": "<b>P(MANIPULATION)</b><br><span style='font-size:0.75em;color:#B9A4D6'>Model confidence score</span>",
+                "text": "<b>P(MANIPULATION)</b><br><span style='font-size:0.75em;color:#94A3B8'>Model confidence score</span>",
                 "font": {"color": THEME["text_muted"], "size": 13, "family": "Space Grotesk, sans-serif"},
             },
             gauge={
@@ -510,9 +509,9 @@ def build_probability_gauge(
                 "borderwidth": 1,
                 "bordercolor": THEME["panel_border"],
                 "steps": [
-                    {"range": [0, low_band * 100], "color": "rgba(196, 161, 255, 0.40)"},
-                    {"range": [low_band * 100, high_band * 100], "color": "rgba(255, 194, 71, 0.40)"},
-                    {"range": [high_band * 100, 100], "color": "rgba(255, 90, 54, 0.40)"},
+                    {"range": [0, low_band * 100], "color": "rgba(16, 185, 129, 0.35)"},
+                    {"range": [low_band * 100, high_band * 100], "color": "rgba(245, 158, 11, 0.35)"},
+                    {"range": [high_band * 100, 100], "color": "rgba(239, 68, 68, 0.35)"},
                 ],
                 "threshold": {
                     "line": {"color": THEME["primary_accent"], "width": 3},
@@ -809,7 +808,8 @@ def build_temporal_attention_chart(
     labels = [f"Frame {i+1}" for i in range(seq_len)]
 
     top_set = set(top_indices) if top_indices is not None else set(np.argsort(scores)[::-1][:3])
-    colors = [THEME["manipulated"] if i in top_set else THEME["primary_accent"] for i in range(seq_len)]
+    # Electric cyan base with violet highlight for top frames
+    colors = [THEME["accent_violet"] if i in top_set else THEME["primary_accent"] for i in range(seq_len)]
 
     fig = go.Figure(
         go.Bar(
@@ -828,9 +828,9 @@ def build_temporal_attention_chart(
         plot_bgcolor=THEME["panel_dark"],
         margin=dict(l=20, r=20, t=30, b=30),
         height=220,
-        font=dict(family="Space Grotesk, sans-serif", color=THEME["text_muted"], size=11),
-        xaxis=dict(gridcolor="rgba(91, 46, 145, 0.2)", tickfont=dict(color=THEME["text_muted"], size=10)),
-        yaxis=dict(gridcolor="rgba(91, 46, 145, 0.2)", title="Attention Weight", tickfont=dict(color=THEME["text_muted"], size=10)),
+        font=dict(family="Inter, Space Grotesk, sans-serif", color=THEME["text_muted"], size=11),
+        xaxis=dict(gridcolor=THEME["panel_border"], tickfont=dict(color=THEME["text_muted"], size=10)),
+        yaxis=dict(gridcolor=THEME["panel_border"], title="Attention Weight", tickfont=dict(color=THEME["text_muted"], size=10)),
     )
     return fig
 

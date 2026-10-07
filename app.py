@@ -1,7 +1,7 @@
-"""Ultraviolet Forensics Deepfake Detection Streamlit Application.
+"""DeepTrace — AI-Powered Deepfake Forensic Analysis Streamlit Application.
 
 Interactive web application for spatio-temporal deepfake analysis featuring:
-- Ultraviolet Forensics visual aesthetic (zero black, blue, or green)
+- Premium SaaS dark forensic visual aesthetic
 - Prototype Model and Real Experiment Model selection
 - Single video analysis with staged telemetry and evidence inspection
 - Batch evaluation with resilient failure isolation
@@ -54,7 +54,7 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Apply Ultraviolet Forensics Theme Styling
+# Apply SaaS Reference Forensic Theme Styling
 st.markdown(html_block(FORENSIC_THEME_CSS), unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
@@ -98,8 +98,8 @@ with st.sidebar:
         <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
             {APP_LOGO_SVG}
             <div>
-                <div style="font-weight:800; font-size:1.25rem; color:#F6EEFF; letter-spacing:-0.02em;">DEEPTRACE</div>
-                <div style="font-size:0.75rem; color:#B9A4D6; text-transform:uppercase; letter-spacing:0.06em;">Forensic Engine</div>
+                <div style="font-weight:800; font-size:1.25rem; color:#FFFFFF; letter-spacing:-0.02em;">DEEPTRACE</div>
+                <div style="font-size:0.75rem; color:#94A3B8; text-transform:uppercase; letter-spacing:0.06em;">Forensic Engine</div>
             </div>
         </div>
         """),
@@ -107,7 +107,7 @@ with st.sidebar:
     )
 
     st.markdown(
-        html_block("<h4 style='margin-top:0; color:#F6EEFF; font-size:0.88rem; text-transform:uppercase; letter-spacing:0.05em;'>Model Checkpoint</h4>"),
+        html_block("<h4 style='margin-top:0; color:#FFFFFF; font-size:0.88rem; text-transform:uppercase; letter-spacing:0.05em;'>Model Checkpoint</h4>"),
         unsafe_allow_html=True,
     )
 
@@ -146,11 +146,11 @@ with st.sidebar:
         selected_model_path = PROTOTYPE_MODEL_PATH
         is_synthetic = True
 
-    # Provenance Badge in Ultraviolet Theme
+    # Provenance Badge in Reference Theme
     if is_synthetic:
         st.markdown(
             html_block(
-                f'<div style="background: rgba(255, 194, 71, 0.15); border: 1px solid {THEME["inconclusive"]}; '
+                f'<div style="background: rgba(245, 158, 11, 0.12); border: 1px solid {THEME["inconclusive"]}; '
                 f'border-radius: 6px; padding: 6px 10px; font-size: 0.8rem; color: {THEME["inconclusive"]}; text-align: center; font-weight: 600;">'
                 'MODE: PROTOTYPE (SYNTHETIC)</div>'
             ),
@@ -159,7 +159,7 @@ with st.sidebar:
     else:
         st.markdown(
             html_block(
-                f'<div style="background: rgba(196, 161, 255, 0.15); border: 1px solid {THEME["authentic"]}; '
+                f'<div style="background: rgba(16, 185, 129, 0.12); border: 1px solid {THEME["authentic"]}; '
                 f'border-radius: 6px; padding: 6px 10px; font-size: 0.8rem; color: {THEME["authentic"]}; text-align: center; font-weight: 600;">'
                 'MODE: REAL EXPERIMENT</div>'
             ),
@@ -168,7 +168,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown(
-        html_block("<h4 style='color:#F6EEFF; margin-bottom: 8px; font-size:0.88rem; text-transform:uppercase; letter-spacing:0.05em;'>Analysis Settings</h4>"),
+        html_block("<h4 style='color:#FFFFFF; margin-bottom: 8px; font-size:0.88rem; text-transform:uppercase; letter-spacing:0.05em;'>Analysis Settings</h4>"),
         unsafe_allow_html=True,
     )
 
@@ -202,7 +202,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown(
-        html_block("<h4 style='color:#F6EEFF; margin-bottom: 8px;'>Face Extraction Mode</h4>"),
+        html_block("<h4 style='color:#FFFFFF; margin-bottom: 8px;'>Face Extraction Mode</h4>"),
         unsafe_allow_html=True,
     )
 
@@ -222,7 +222,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown(
-        html_block("<h4 style='color:#F6EEFF; margin-bottom: 6px; font-size:0.88rem; text-transform:uppercase; letter-spacing:0.05em;'>Model Architecture</h4>"),
+        html_block("<h4 style='color:#FFFFFF; margin-bottom: 6px; font-size:0.88rem; text-transform:uppercase; letter-spacing:0.05em;'>Model Architecture</h4>"),
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -239,7 +239,7 @@ with st.sidebar:
 
     st.markdown("---")
     st.markdown(
-        html_block("<h4 style='color:#F6EEFF; margin-bottom: 6px; font-size:0.88rem; text-transform:uppercase; letter-spacing:0.05em;'>About DeepTrace</h4>"),
+        html_block("<h4 style='color:#FFFFFF; margin-bottom: 6px; font-size:0.88rem; text-transform:uppercase; letter-spacing:0.05em;'>About DeepTrace</h4>"),
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -263,9 +263,9 @@ with st.sidebar:
 # -----------------------------------------------------------------------------
 model_online = os.path.exists(selected_model_path)
 status_pill_html = (
-    f'<div class="status-online-pill"><span class="status-chip-dot dot-lilac"></span>MODEL ONLINE</div>'
+    f'<div class="status-online-pill"><span class="status-chip-dot dot-green"></span>MODEL ONLINE</div>'
     if model_online
-    else f'<div class="status-offline-pill"><span class="status-chip-dot dot-vermilion"></span>MODEL OFFLINE</div>'
+    else f'<div class="status-offline-pill"><span class="status-chip-dot dot-red"></span>MODEL OFFLINE</div>'
 )
 
 st.markdown(
@@ -274,8 +274,8 @@ st.markdown(
         <div class="deeptrace-brand-col">
             {APP_LOGO_SVG}
             <div>
-                <div class="deeptrace-title">DEEPTRACE</div>
-                <div class="deeptrace-sub">AI-POWERED DEEPFAKE FORENSIC ANALYSIS</div>
+                <div class="deeptrace-title">DEEPTRACE <span>FORENSIC</span></div>
+                <div class="deeptrace-sub">AI FORENSIC ANALYSIS</div>
             </div>
         </div>
         <div>
@@ -289,7 +289,7 @@ st.markdown(
 # Status Chips Row
 git_commit_short = get_git_commit()
 model_chip_name = "demo/best_model" if is_synthetic else "outputs/best_model (V2)"
-model_chip_color = "dot-gold" if is_synthetic else "dot-lilac"
+model_chip_color = "dot-amber" if is_synthetic else "dot-green"
 
 st.markdown(
     html_block(f"""
@@ -299,19 +299,19 @@ st.markdown(
             <span>Model: <b>{model_chip_name}</b></span>
         </div>
         <div class="status-chip">
-            <span class="status-chip-dot dot-uv"></span>
+            <span class="status-chip-dot dot-cyan"></span>
             <span>Architecture: <b>CNN + BiLSTM + Temporal Attention</b></span>
         </div>
         <div class="status-chip">
-            <span class="status-chip-dot dot-uv"></span>
+            <span class="status-chip-dot dot-cyan"></span>
             <span>Sequence: <b>10 frames @ 128x128 RGB</b></span>
         </div>
         <div class="status-chip">
-            <span class="status-chip-dot dot-lilac"></span>
+            <span class="status-chip-dot dot-cyan"></span>
             <span>Threshold: <b>{threshold:.2f}</b></span>
         </div>
         <div class="status-chip">
-            <span class="status-chip-dot dot-vermilion"></span>
+            <span class="status-chip-dot dot-violet"></span>
             <span>Git: <code>{git_commit_short}</code></span>
         </div>
     </div>
@@ -359,10 +359,25 @@ with tab_analyze:
     st.markdown(
         html_block("""
         <div class="hero-box">
-            <h2 class="hero-heading">Deepfake Forensic Analysis</h2>
+            <div class="hero-badge">AI-POWERED FORENSIC ENGINE</div>
+            <h1 class="hero-heading">Deepfake <span class="hero-heading-gradient">Forensic Analysis</span></h1>
             <p class="hero-desc">
                 Analyze video authenticity using spatial and temporal deep-learning signals.
             </p>
+            <div class="capability-grid">
+                <div class="capability-card">
+                    <div class="capability-card-title">FORENSIC ANALYSIS</div>
+                    <div class="capability-card-desc">Spatial + temporal AI analysis</div>
+                </div>
+                <div class="capability-card">
+                    <div class="capability-card-title">TEMPORAL EVIDENCE</div>
+                    <div class="capability-card-desc">Frame-level attention analysis</div>
+                </div>
+                <div class="capability-card">
+                    <div class="capability-card-title">EXPLAINABLE RESULTS</div>
+                    <div class="capability-card-desc">Evidence-backed forensic verdicts</div>
+                </div>
+            </div>
         </div>
         """),
         unsafe_allow_html=True,
@@ -400,14 +415,14 @@ with tab_analyze:
             st.markdown(
                 html_block(f"""
                 <div style="font-size:0.86rem; color:{THEME['text_muted']}; margin-bottom:6px;">
-                    Supported formats: <b>MP4, MOV, AVI, MKV</b> &nbsp;|&nbsp; Max practical size: <b>50MB</b><br>
+                    Upload Video &nbsp;|&nbsp; Supported: <b>MP4 / MOV / AVI / MKV</b> &nbsp;|&nbsp; Maximum: <b>50 MB</b><br>
                     Videos are processed into temporal frame sequences and analyzed locally. Ephemeral buffers are destroyed immediately after inference.
                 </div>
                 """),
                 unsafe_allow_html=True,
             )
             uploaded_file = st.file_uploader(
-                "Drop a video here or browse files (.mp4, .mov, .avi, .mkv - max 50MB):",
+                "Upload Video (.mp4, .mov, .avi, .mkv - max 50 MB):",
                 type=["mp4", "mov", "avi", "mkv"],
                 help="Video will be processed locally in a temporary directory and destroyed immediately after inference.",
             )
@@ -451,14 +466,6 @@ with tab_analyze:
                     html_block(f"""
                     <div class="video-meta-grid">
                         <div class="video-meta-card">
-                            <div class="video-meta-label">Filename</div>
-                            <div class="video-meta-value">{v_meta.get('filename', 'video.mp4')[:16]}</div>
-                        </div>
-                        <div class="video-meta-card">
-                            <div class="video-meta-label">File Size</div>
-                            <div class="video-meta-value">{v_meta.get('filesize_mb', 0):.1f} MB</div>
-                        </div>
-                        <div class="video-meta-card">
                             <div class="video-meta-label">Duration</div>
                             <div class="video-meta-value">{v_meta.get('duration_sec', 0):.1f}s</div>
                         </div>
@@ -471,7 +478,7 @@ with tab_analyze:
                             <div class="video-meta-value">{v_meta.get('fps', 0)}</div>
                         </div>
                         <div class="video-meta-card">
-                            <div class="video-meta-label">Frame Count</div>
+                            <div class="video-meta-label">Frames</div>
                             <div class="video-meta-value">{v_meta.get('total_frames', 0)}</div>
                         </div>
                     </div>
@@ -480,7 +487,7 @@ with tab_analyze:
                 )
 
         analyze_button = st.button(
-            "Analyze Video",
+            "ANALYZE VIDEO →",
             type="primary",
             disabled=(target_video_path is None or not os.path.exists(selected_model_path)),
             use_container_width=True,
@@ -488,7 +495,7 @@ with tab_analyze:
 
     with preview_col:
         st.markdown(
-            html_block("<h4 style='color:#F6EEFF; margin-top:0;'>Source Video</h4>"),
+            html_block("<h4 style='color:var(--text-primary); margin-top:0;'>Source Video</h4>"),
             unsafe_allow_html=True,
         )
         if target_video_path and os.path.exists(target_video_path):
@@ -651,15 +658,24 @@ with tab_analyze:
             else ("Center-Crop Fallback" if f_stats.get("fallback_used") else "Not detected")
         )
 
+        if rec["verdict"] == "FAKE":
+            verdict_sub = "High confidence manipulation detected" if rec["p_fake"] >= 0.60 else "Potential manipulation detected"
+        elif rec["verdict"] == "REAL":
+            verdict_sub = "Authentic video patterns verified"
+        else:
+            verdict_sub = "Ambiguous signals — review recommended"
+
         st.markdown(
             html_block(f"""
             <div class="result-hero-card result-hero-card-{v_info['status']}">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+                <div style="font-size: 0.72rem; font-weight: 700; letter-spacing: 0.08em; color: var(--accent-electric); text-transform: uppercase; margin-bottom: 8px;">FORENSIC VERDICT</div>
+                <div class="verdict-header-row">
                     <div>
                         <div class="verdict-pill-{v_info['status']}">
                             <span>{v_info['icon']}</span>
                             <span>{rec['verdict']}</span>
                         </div>
+                        <div class="verdict-subtitle">{verdict_sub}</div>
                         <div class="prob-metric-row">
                             <span class="prob-metric-title">Fake Probability:</span>
                             <span class="prob-metric-value">{rec['p_fake']*100:.2f}%</span>
@@ -710,8 +726,8 @@ with tab_analyze:
         st.markdown(
             html_block("""
             <div style="margin-top: 28px; margin-bottom: 12px;">
-                <h3 style="color:#F6EEFF; margin-bottom: 4px;">Temporal Forensic Evidence</h3>
-                <p style="color:#B9A4D6; font-size: 0.92rem; margin: 0; line-height: 1.5;">
+                <h3 style="color:var(--text-primary); margin-bottom: 4px; font-weight:700;">TEMPORAL FORENSIC EVIDENCE</h3>
+                <p style="color:var(--text-muted); font-size: 0.92rem; margin: 0; line-height: 1.5;">
                     The model analyzes multiple frames and assigns temporal attention weights to identify which frames contributed most strongly to the final prediction.
                     Frames receiving higher temporal attention contributed more strongly to the model's decision.
                 </p>
@@ -734,7 +750,7 @@ with tab_analyze:
                         st.markdown(
                             html_block(f"""
                             <div class="frame-evidence-card">
-                                <div class="frame-evidence-rank">Important Frame 0{rank_i}</div>
+                                <div class="frame-evidence-rank">IMPORTANT FRAME 0{rank_i}</div>
                             """),
                             unsafe_allow_html=True,
                         )
@@ -761,7 +777,7 @@ with tab_analyze:
         # Temporal Attention Distribution Chart
         if attn_scores is not None:
             st.markdown(
-                html_block("<h5 style='color:#F6EEFF; margin-top: 18px;'>Temporal Attention Distribution (Frame Step 1–10)</h5>"),
+                html_block("<h5 style='color:var(--text-primary); margin-top: 18px;'>Temporal Attention Distribution (Frame Step 1–10)</h5>"),
                 unsafe_allow_html=True,
             )
             attn_fig = build_temporal_attention_chart(attn_scores, top_indices=top_f[:3])
@@ -771,7 +787,7 @@ with tab_analyze:
         # FORENSIC SUMMARY
         # -------------------------------------------------------------
         st.markdown(
-            html_block("<h3 style='color:#F6EEFF; margin-top: 28px; margin-bottom: 12px;'>Forensic Summary</h3>"),
+            html_block("<h3 style='color:var(--text-primary); margin-top: 28px; margin-bottom: 12px; font-weight:700;'>Forensic Summary</h3>"),
             unsafe_allow_html=True,
         )
 
@@ -785,31 +801,31 @@ with tab_analyze:
             html_block(f"""
             <div class="summary-block-grid">
                 <div class="summary-block-item">
-                    <div class="summary-block-title">Prediction</div>
+                    <div class="summary-block-title">PREDICTION</div>
                     <div class="summary-block-value" style="color: {v_info['color']};">{rec['label']}</div>
                 </div>
                 <div class="summary-block-item">
-                    <div class="summary-block-title">Fake Probability</div>
+                    <div class="summary-block-title">FAKE PROBABILITY</div>
                     <div class="summary-block-value">{rec['p_fake']*100:.2f}%</div>
                 </div>
                 <div class="summary-block-item">
-                    <div class="summary-block-title">Decision Threshold</div>
+                    <div class="summary-block-title">DECISION THRESHOLD</div>
                     <div class="summary-block-value">{rec['threshold']:.2f}</div>
                 </div>
                 <div class="summary-block-item">
-                    <div class="summary-block-title">Frames Analyzed</div>
+                    <div class="summary-block-title">FRAMES ANALYZED</div>
                     <div class="summary-block-value">10 frames</div>
                 </div>
                 <div class="summary-block-item">
-                    <div class="summary-block-title">Faces Detected</div>
+                    <div class="summary-block-title">FACES DETECTED</div>
                     <div class="summary-block-value">{f_stats.get('detected_faces_count', 0)} ({f_stats.get('face_detection_rate', 0.0)*100:.1f}%)</div>
                 </div>
                 <div class="summary-block-item">
-                    <div class="summary-block-title">Temporal Evidence</div>
+                    <div class="summary-block-title">TEMPORAL EVIDENCE</div>
                     <div class="summary-block-value">{top_f_str}</div>
                 </div>
                 <div class="summary-block-item">
-                    <div class="summary-block-title">Model Architecture</div>
+                    <div class="summary-block-title">MODEL ARCHITECTURE</div>
                     <div class="summary-block-value">{rec.get('model_arch_label', 'CNN + BiLSTM + Attention')}</div>
                 </div>
             </div>
@@ -864,7 +880,7 @@ with tab_analyze:
         # -------------------------------------------------------------
         st.markdown("---")
         st.markdown(
-            html_block("<h4 style='color:#F6EEFF;'>Forensic Audit Report Export</h4>"),
+            html_block("<h4 style='color:var(--text-primary);'>Forensic Audit Report Export</h4>"),
             unsafe_allow_html=True,
         )
         r_col1, r_col2 = st.columns(2)
@@ -896,7 +912,7 @@ with tab_analyze:
 # =============================================================================
 with tab_batch:
     st.markdown(
-        html_block("<h3 style='color:#F6EEFF; margin-top:0;'>Batch Forensic Video Evaluation</h3>"),
+        html_block("<h3 style='color:var(--text-primary); margin-top:0;'>Batch Forensic Video Evaluation</h3>"),
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -1011,7 +1027,7 @@ with tab_batch:
 
     if st.session_state.batch_results:
         st.markdown(
-            html_block("<h4 style='color:#F6EEFF;'>Batch Processing Results</h4>"),
+            html_block("<h4 style='color:var(--text-primary);'>Batch Processing Results</h4>"),
             unsafe_allow_html=True,
         )
         batch_df = pd.DataFrame(st.session_state.batch_results)
@@ -1030,7 +1046,7 @@ with tab_batch:
 # =============================================================================
 with tab_history:
     st.markdown(
-        html_block("<h3 style='color:#F6EEFF; margin-top:0;'>Session Analysis Audit Trail</h3>"),
+        html_block("<h3 style='color:var(--text-primary); margin-top:0;'>Session Analysis Audit Trail</h3>"),
         unsafe_allow_html=True,
     )
     st.markdown(
@@ -1063,7 +1079,7 @@ with tab_history:
 # =============================================================================
 with tab_results:
     st.markdown(
-        html_block("<h3 style='color:#F6EEFF; margin-top:0;'>Benchmark Evaluation & Model Architecture</h3>"),
+        html_block("<h3 style='color:var(--text-primary); margin-top:0;'>Benchmark Evaluation & Model Architecture</h3>"),
         unsafe_allow_html=True,
     )
 
@@ -1073,7 +1089,7 @@ with tab_results:
     # Strictly honest reporting: only read outputs/metrics.json if it genuinely exists
     if os.path.exists(metrics_path):
         st.markdown(
-            html_block("<h4 style='color:#F6EEFF;'>Celeb-DF v2 Benchmark Results</h4>"),
+            html_block("<h4 style='color:var(--text-primary);'>Celeb-DF v2 Benchmark Results</h4>"),
             unsafe_allow_html=True,
         )
         try:
@@ -1104,7 +1120,7 @@ with tab_results:
 
     if os.path.exists(run_info_path):
         st.markdown(
-            html_block("<h4 style='color:#F6EEFF;'>Training Run Parameters</h4>"),
+            html_block("<h4 style='color:var(--text-primary);'>Training Run Parameters</h4>"),
             unsafe_allow_html=True,
         )
         try:
@@ -1120,7 +1136,7 @@ with tab_results:
     roc_path = "outputs/roc_curve.png"
     if os.path.exists(cm_path) or os.path.exists(roc_path):
         st.markdown(
-            html_block("<h4 style='color:#F6EEFF;'>Benchmark Visualizations</h4>"),
+            html_block("<h4 style='color:var(--text-primary);'>Benchmark Visualizations</h4>"),
             unsafe_allow_html=True,
         )
         p_col1, p_col2 = st.columns(2)
@@ -1134,7 +1150,7 @@ with tab_results:
     # Architecture Blueprint
     st.markdown("---")
     st.markdown(
-        html_block("<h4 style='color:#F6EEFF;'>Spatio-Temporal CNN-LSTM Architecture Blueprint</h4>"),
+        html_block("<h4 style='color:var(--text-primary);'>Spatio-Temporal CNN-LSTM Architecture Blueprint</h4>"),
         unsafe_allow_html=True,
     )
 
@@ -1182,7 +1198,7 @@ with tab_results:
 # =============================================================================
 with tab_how:
     st.markdown(
-        html_block("<h3 style='color:#F6EEFF; margin-top:0;'>How the Deepfake Detector Operates</h3>"),
+        html_block("<h3 style='color:var(--text-primary); margin-top:0;'>How the Deepfake Detector Operates</h3>"),
         unsafe_allow_html=True,
     )
 
@@ -1238,7 +1254,7 @@ with tab_how:
 # =============================================================================
 with tab_about:
     st.markdown(
-        html_block("<h3 style='color:#F6EEFF; margin-top:0;'>About the Project, Limitations & Privacy</h3>"),
+        html_block("<h3 style='color:var(--text-primary); margin-top:0;'>About the Project, Limitations & Privacy</h3>"),
         unsafe_allow_html=True,
     )
 
