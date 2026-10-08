@@ -13,7 +13,7 @@
 Evaluated against the official 518-video held-out test split of the authentic **Celeb-DF v2** benchmark, DeepTrace achieves **81.27% Video Accuracy**, **79.71% Balanced Accuracy**, **86.49% Precision**, **84.71% Fake Recall**, **85.59% F1-Score**, and **88.22% ROC-AUC** at a strictly locked validation threshold of $\tau^* = 0.39$.
 
 🌐 **Live Production Application**: [https://deeptrace-forensics.streamlit.app/](https://deeptrace-forensics.streamlit.app/)  
-📂 **GitHub Repository**: [https://github.com/dheerajkmahale/deepfake-detector](https://github.com/dheerajkmahale/deepfake-detector)
+📂 **GitHub Repository**: [https://github.com/dheerajkmahale/DeepTrace-Forensic](https://github.com/dheerajkmahale/DeepTrace-Forensic)
 
 ---
 
@@ -282,7 +282,7 @@ Decision: P(Fake) >> 0.39 Cutoff --> Confident Manipulation
 ## 13. Project Structure
 
 ```text
-deepfake-detector/
+DeepTrace-Forensic/
 ├── app.py                     # Streamlit forensic workspace (6 interactive tabs)
 ├── config.py                  # Pipeline configuration, threshold constants, and model fetcher
 ├── dataset.py                 # Balanced batch generator with online augmentations
@@ -318,8 +318,8 @@ deepfake-detector/
 ### Installation
 ```bash
 # 1. Clone repository
-git clone https://github.com/dheerajkmahale/deepfake-detector.git
-cd deepfake-detector
+git clone https://github.com/dheerajkmahale/DeepTrace-Forensic.git
+cd DeepTrace-Forensic
 
 # 2. Create virtual environment
 python -m venv venv
@@ -395,7 +395,7 @@ This project is licensed under the **MIT License** — see the [LICENSE](LICENSE
   title = {DeepTrace: AI-Powered Deepfake Forensic Analysis},
   year = {2026},
   publisher = {GitHub},
-  howpublished = {\url{https://github.com/dheerajkmahale/deepfake-detector}}
+  howpublished = {\url{https://github.com/dheerajkmahale/DeepTrace-Forensic}}
 }
 ```
 
