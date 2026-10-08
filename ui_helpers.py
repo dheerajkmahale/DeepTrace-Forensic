@@ -9,8 +9,10 @@ Provides pure functions for:
 
 import base64
 import datetime
+import hashlib
 import json
 import os
+import shutil
 import subprocess
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -34,6 +36,145 @@ def html_block(html_str: str) -> str:
         return ""
     lines = [line.strip() for line in html_str.splitlines() if line.strip()]
     return "\n".join(lines)
+
+
+def get_playable_video_source(video_path: str) -> Tuple[Optional[bytes], str, Optional[str]]:
+    """Prepare a browser-safe, playable media representation for video preview.
+
+    Ensures that browser HTML5 video players receive a format and byte stream they can
+    reliably decode (e.g. WebM/VP8 or H.264 MP4), avoiding demuxer failures on legacy
+    MPEG-4 Part 2 (mp4v / FMP4) or unsupported containers (.avi, .mkv).
+
+    The original video at `video_path` is never modified and remains intact for ML inference.
+
+    Returns:
+        (video_bytes, mime_type, notice_message)
+    """
+    if not video_path or not os.path.exists(video_path):
+        return None, "", "Video file not found."
+
+    file_size = os.path.getsize(video_path)
+    if file_size == 0:
+        return None, "", "Video file is empty (0 bytes)."
+
+    cache_dir = os.path.join("data", ".preview_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    base_name = os.path.splitext(os.path.basename(video_path))[0]
+    ext = os.path.splitext(video_path)[1].lower()
+
+    # 1. Check known preset preview names
+    preset_candidates = [
+        os.path.join(cache_dir, f"{base_name}_preview.webm"),
+        os.path.join(cache_dir, f"{base_name}.webm"),
+    ]
+    for cand in preset_candidates:
+        if os.path.exists(cand) and os.path.getsize(cand) > 0:
+            with open(cand, "rb") as f:
+                return f.read(), "video/webm", None
+
+    # 2. Check hash-based preview cache
+    try:
+        mtime = int(os.path.getmtime(video_path))
+    except Exception:
+        mtime = 0
+    cache_key = hashlib.sha256(f"{video_path}_{file_size}_{mtime}".encode()).hexdigest()[:16]
+    cached_file = os.path.join(cache_dir, f"preview_{cache_key}.webm")
+    if os.path.exists(cached_file) and os.path.getsize(cached_file) > 0:
+        with open(cached_file, "rb") as f:
+            return f.read(), "video/webm", None
+
+    # 3. Inspect video stream with OpenCV
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        cap.release()
+        try:
+            with open(video_path, "rb") as f:
+                return f.read(), "video/mp4", None
+        except Exception:
+            return None, "", "Unable to read video file."
+
+    fourcc_int = int(cap.get(cv2.CAP_PROP_FOURCC))
+    fourcc_str = "".join([chr((fourcc_int >> 8 * i) & 0xFF) for i in range(4)]).strip()
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap.release()
+
+    # If already native browser-safe H.264 MP4
+    if ext == ".mp4" and fourcc_str.lower() in ["avc1", "h264", "x264"]:
+        with open(video_path, "rb") as f:
+            return f.read(), "video/mp4", None
+
+    # If already WebM container
+    if ext == ".webm":
+        with open(video_path, "rb") as f:
+            return f.read(), "video/webm", None
+
+    # 4. For MPEG-4 Part 2 (mp4v / FMP4) or container (.avi, .mov, .mkv):
+    # Generate browser-playable WebM preview
+    transcoded = False
+    ffmpeg_bin = shutil.which("ffmpeg")
+    if ffmpeg_bin:
+        try:
+            cmd = [
+                ffmpeg_bin, "-y", "-i", video_path,
+                "-c:v", "libvpx", "-b:v", "1M", "-crf", "12",
+                "-vf", "scale='min(960,iw)':-2",
+                "-an", cached_file,
+            ]
+            res = subprocess.run(cmd, capture_output=True, timeout=30)
+            if res.returncode == 0 and os.path.exists(cached_file) and os.path.getsize(cached_file) > 0:
+                transcoded = True
+        except Exception:
+            transcoded = False
+
+    if not transcoded:
+        try:
+            cap = cv2.VideoCapture(video_path)
+            fourcc = cv2.VideoWriter_fourcc(*"vp80")
+            target_w, target_h = w, h
+            if target_h > 480:
+                scale = 480.0 / target_h
+                target_w = int(target_w * scale)
+                target_h = 480
+            target_w -= target_w % 2
+            target_h -= target_h % 2
+
+            vw = cv2.VideoWriter(cached_file, fourcc, fps, (target_w, target_h))
+            if vw.isOpened():
+                while True:
+                    ret, frame = cap.read()
+                    if not ret or frame is None:
+                        break
+                    if (target_w, target_h) != (w, h):
+                        frame = cv2.resize(frame, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
+                    vw.write(frame)
+                vw.release()
+                if os.path.exists(cached_file) and os.path.getsize(cached_file) > 0:
+                    transcoded = True
+            cap.release()
+        except Exception:
+            transcoded = False
+
+    if transcoded and os.path.exists(cached_file) and os.path.getsize(cached_file) > 0:
+        with open(cached_file, "rb") as f:
+            notice = None
+            if ext != ".mp4" or fourcc_str.lower() not in ["avc1", "h264"]:
+                notice = f"Preview stream optimized for browser playback ({ext.upper()} container preserved for analysis)."
+            return f.read(), "video/webm", notice
+
+    # Fallback to raw bytes with MIME resolution
+    mime_map = {
+        ".mp4": "video/mp4",
+        ".mov": "video/quicktime",
+        ".avi": "video/x-msvideo",
+        ".mkv": "video/x-matroska",
+        ".webm": "video/webm",
+    }
+    fallback_mime = mime_map.get(ext, "video/mp4")
+    with open(video_path, "rb") as f:
+        return f.read(), fallback_mime, f"Browser may require native {ext.upper()} codec support for playback."
 
 
 def render_custom_video_player(video_path: str) -> str:
@@ -81,15 +222,20 @@ def render_custom_video_player(video_path: str) -> str:
             </div>
             """)
 
-    # Read and base64 encode
-    with open(video_path, "rb") as f:
-        v_b64 = base64.b64encode(f.read()).decode("utf-8")
+    # Read browser-playable bytes
+    v_bytes, v_mime, _ = get_playable_video_source(video_path)
+    if v_bytes is None:
+        with open(video_path, "rb") as f:
+            v_bytes = f.read()
+        v_mime = "video/mp4"
+
+    v_b64 = base64.b64encode(v_bytes).decode("utf-8")
 
     player_html = f"""
     <div class="video-preview-wrapper" style="border: 1px solid {THEME['panel_border']}; border-radius: 12px; overflow: hidden; background: {THEME['panel_dark']};">
         <div class="custom-video-screen" style="position: relative; width: 100%; aspect-ratio: 16/9; background: {THEME['panel_dark']}; display: flex; align-items: center; justify-content: center; overflow: hidden;">
             <video id="forensic-custom-video"
-                   src="data:video/mp4;base64,{v_b64}"
+                   src="data:{v_mime};base64,{v_b64}"
                    preload="metadata"
                    playsinline
                    ontimeupdate="var s=document.getElementById('forensic-seeker'); var t=document.getElementById('forensic-time'); if(s && this.duration) {{ s.value=(this.currentTime/this.duration)*100; }} if(t) {{ var m=Math.floor(this.currentTime/60); var sec=Math.floor(this.currentTime%60); t.innerText=(m<10?'0':'')+m+':'+(sec<10?'0':'')+sec; }}"
@@ -104,8 +250,8 @@ def render_custom_video_player(video_path: str) -> str:
                 Play
             </button>
             <input id="forensic-seeker" type="range" min="0" max="100" value="0" aria-label="Timeline scrubber" tabindex="0"
-                   oninput="var v=document.getElementById('forensic-custom-video'); if(v && v.duration){{v.currentTime=(this.value/100)*v.duration;}}"
-                   style="flex: 1; accent-color: {THEME['primary_accent']}; background: {THEME['panel_dark']}; cursor: pointer;">
+                    oninput="var v=document.getElementById('forensic-custom-video'); if(v && v.duration){{v.currentTime=(this.value/100)*v.duration;}}"
+                    style="flex: 1; accent-color: {THEME['primary_accent']}; background: {THEME['panel_dark']}; cursor: pointer;">
             <span id="forensic-time" aria-label="Playback timestamp" style="color: {THEME['text_primary']}; font-family: 'JetBrains Mono', monospace; font-size: 0.88rem; font-weight: 600;">
                 00:00
             </span>

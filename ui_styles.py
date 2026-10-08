@@ -677,6 +677,24 @@ div.stButton > button[kind="secondary"]:hover, div.stDownloadButton > button:hov
     color: var(--primary-accent) !important;
 }}
 
+/* Custom Video Preview Styling */
+[data-testid="stVideo"] {{
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--panel-border);
+    background: var(--panel-dark);
+    margin: 8px 0;
+}}
+
+[data-testid="stVideo"] video {{
+    border-radius: 8px;
+    max-height: 380px;
+    width: 100%;
+    object-fit: contain;
+    background: var(--bg-dark);
+}}
+
+
 
 /* Responsive Adjustments */
 @media (max-width: 768px) {{

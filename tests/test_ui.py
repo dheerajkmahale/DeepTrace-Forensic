@@ -255,7 +255,7 @@ class TestStreamlitAppTest:
         options = model_selectbox.options
 
         if os.path.exists("outputs/best_model.keras"):
-            available_option = [opt for opt in options if "Real Experiment Model (outputs/best_model.keras)" in opt]
+            available_option = [opt for opt in options if "DeepTrace Production Engine (outputs/best_model.keras)" in opt or "Real Experiment Model (outputs/best_model.keras)" in opt]
             assert len(available_option) > 0, f"Expected available real model option in selectbox, found: {options}"
 
     def test_prototype_banner_appears_for_prototype_model(self):
@@ -384,3 +384,28 @@ class TestForbiddenColors:
         # Empty df
         empty_html = render_forensic_table(pd.DataFrame())
         assert "No records to display" in empty_html
+
+    def test_get_playable_video_source(self):
+        """Verify get_playable_video_source returns playable bytes and valid MIME format."""
+        from ui_helpers import get_playable_video_source
+
+        # Test non-existent file
+        bytes_none, mime, err = get_playable_video_source("non_existent.mp4")
+        assert bytes_none is None
+        assert "not found" in err.lower()
+
+        # Test real reference preset
+        real_path = "data/raw/real/Celeb-real/id0_0000.mp4"
+        if os.path.exists(real_path):
+            v_bytes, v_mime, _ = get_playable_video_source(real_path)
+            assert v_bytes is not None
+            assert len(v_bytes) > 0
+            assert v_mime in ["video/webm", "video/mp4"]
+
+        # Test fake reference preset
+        fake_path = "data/raw/fake/Celeb-synthesis/id0_id16_0000.mp4"
+        if os.path.exists(fake_path):
+            v_bytes, v_mime, _ = get_playable_video_source(fake_path)
+            assert v_bytes is not None
+            assert len(v_bytes) > 0
+            assert v_mime in ["video/webm", "video/mp4"]
