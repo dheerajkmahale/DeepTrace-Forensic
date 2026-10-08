@@ -862,12 +862,14 @@ def run_preprocessing(
         for p in discover_videos(real_dir):
             cls = classify_video_folder(p)
             cat = cls[0] if cls else "real"
-            rel_id = f"real/{os.path.relpath(p, real_dir).replace('\\', '/')}"
+            rel_p = os.path.relpath(p, real_dir).replace("\\", "/")
+            rel_id = f"real/{rel_p}"
             video_records.append((rel_id, cat, 0, p))
         for p in discover_videos(fake_dir):
             cls = classify_video_folder(p)
             cat = cls[0] if cls else "fake"
-            rel_id = f"fake/{os.path.relpath(p, fake_dir).replace('\\', '/')}"
+            rel_p = os.path.relpath(p, fake_dir).replace("\\", "/")
+            rel_id = f"fake/{rel_p}"
             video_records.append((rel_id, cat, 1, p))
     else:
         all_raw_videos = discover_videos(raw_dir)
