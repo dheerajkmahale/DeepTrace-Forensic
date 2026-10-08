@@ -1,52 +1,88 @@
-# Deepfake Detector — Hybrid CNN-BiLSTM-Attention Forensic Video Analysis
+# DeepTrace — AI-Powered Deepfake Forensic Analysis
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
-[![TensorFlow 2.15+](https://img.shields.io/badge/TensorFlow-2.15%2B-orange.svg)](https://tensorflow.org/)
-[![Streamlit App](https://img.shields.io/badge/Streamlit-1.32%2B-red.svg)](https://streamlit.io/)
-[![Tests Passing](https://img.shields.io/badge/pytest-56%20passed-brightgreen.svg)](https://pytest.org/)
+> **Detect. Analyze. Verify.**
+
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![TensorFlow 2.16+](https://img.shields.io/badge/TensorFlow-2.16%2B-FF6F00.svg?logo=tensorflow&logoColor=white)](https://tensorflow.org/)
+[![Streamlit App](https://img.shields.io/badge/Streamlit-Live%20App-FF4B4B.svg?logo=streamlit&logoColor=white)](https://deeptrace-forensics.streamlit.app/)
+[![Tests Passing](https://img.shields.io/badge/pytest-57%20passed-brightgreen.svg?logo=pytest&logoColor=white)](https://pytest.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-An end-to-end, reproducible deep learning system for facial deepfake video detection. Built with a **TimeDistributed CNN + Bidirectional LSTM + Temporal Attention** hybrid architecture and evaluated against the authentic **Celeb-DF v2** benchmark, achieving **81.27% Video Accuracy**, **79.71% Video Balanced Accuracy**, **84.71% Fake Video Recall**, **85.59% Video F1-Score**, and **88.22% Video ROC-AUC** on the official 518-video held-out test split.
+**DeepTrace** is an end-to-end, production-verified deep learning forensic analysis application for facial deepfake video detection. Built with a **TimeDistributed 4-Block CNN + Bidirectional LSTM + Temporal Attention** hybrid neural architecture, DeepTrace exposes both spatial blending artifacts and subtle inter-frame temporal inconsistencies. 
+
+Evaluated against the official 518-video held-out test split of the authentic **Celeb-DF v2** benchmark, DeepTrace achieves **81.27% Video Accuracy**, **79.71% Balanced Accuracy**, **86.49% Precision**, **84.71% Fake Recall**, **85.59% F1-Score**, and **88.22% ROC-AUC** at a strictly locked validation threshold of $\tau^* = 0.39$.
+
+🌐 **Live Production Application**: [https://deeptrace-forensics.streamlit.app/](https://deeptrace-forensics.streamlit.app/)  
+📂 **GitHub Repository**: [https://github.com/dheerajkmahale/deepfake-detector](https://github.com/dheerajkmahale/deepfake-detector)
 
 ---
 
-## 1. Project Title & Overview
+## Table of Contents
+1. [Project Overview & Problem Statement](#1-project-overview--problem-statement)
+2. [Key Features](#2-key-features)
+3. [Forensic Workspace & Live Interface](#3-forensic-workspace--live-interface)
+4. [System Architecture](#4-system-architecture)
+5. [Machine Learning Architecture](#5-machine-learning-architecture)
+6. [Face Detection & Temporal Tracking Pipeline](#6-face-detection--temporal-tracking-pipeline)
+7. [Temporal Attention Explainability](#7-temporal-attention-explainability)
+8. [Calibration & Decision Threshold](#8-calibration--decision-threshold)
+9. [Benchmark Evaluation: Celeb-DF v2](#9-benchmark-evaluation-celeb-df-v2)
+10. [Official Performance Metrics & Visualizations](#10-official-performance-metrics--visualizations)
+11. [Verified Reference Samples](#11-verified-reference-samples)
+12. [Technology Stack](#12-technology-stack)
+13. [Project Structure](#13-project-structure)
+14. [How to Run Locally](#14-how-to-run-locally)
+15. [Safe Production Model Delivery](#15-safe-production-model-delivery)
+16. [Limitations & Technical Disclosures](#16-limitations--technical-disclosures)
+17. [Responsible Use Notice](#17-responsible-use-notice)
+18. [License & Citation](#18-license--citation)
 
-**Deepfake Detector** is an open-source forensic video analysis tool designed to distinguish between authentic human face videos and AI-synthesized manipulations. Generative facial synthesis models (autoencoders, face-swapping GANs, diffusion pipelines) introduce subtle spatial boundary artifacts and temporal incoherencies across successive frames.
+---
 
-This project implements a complete, leak-free pipeline:
-1. Automated video ingestion, temporal segmenting, and Haar cascade face tracking.
-2. Spatio-temporal modeling combining a 4-block convolutional feature extractor with a Bidirectional LSTM network and Temporal Attention pooling.
-3. Genuine frame-by-frame temporal explainability highlighting which frames influenced the classification.
-4. Dynamic class-balanced training to eliminate majority-class collapse on highly imbalanced data.
-5. Validation-isolated threshold calibration ($\tau^* = 0.3900$) to prevent benchmark overfitting.
-6. An interactive, dark-mode forensic web demo built with Streamlit.
+## 1. Project Overview & Problem Statement
+
+Modern facial synthesis engines—such as deep generative autoencoders, GAN face-swappers, and diffusion pipelines—generate photorealistic manipulations that easily deceive the human eye. While individual synthesized frames can appear plausible, they consistently leave micro-level spatial boundaries (e.g., hair-skin blending seams, jawline color discrepancies) and temporal incoherencies across successive frames (e.g., temporal jitter, flickering illumination, landmark trajectory jitter).
+
+Standard single-frame image classifiers fail on video deepfakes because they cannot observe inter-frame motion or temporal dynamics. Conversely, uncalibrated video models suffer from extreme majority-class collapse when trained on heavily skewed datasets.
+
+**DeepTrace solves this through a leak-free, spatio-temporal forensic pipeline**:
+- Ingests raw video containers, standardizes temporal sampling across uniform segments, and isolates facial regions with bounding-box margins.
+- Employs a 4-block convolutional network to extract spatial boundary features, followed by a Bidirectional LSTM to model temporal forward-backward sequence continuity.
+- Pools recurrent representations using a custom **Temporal Attention** layer, exposing exact frame-level attention weights ($\alpha_t$) for transparent forensic auditability.
+- Employs validation-isolated threshold calibration ($\tau^* = 0.3900$) and class-balanced dynamic batching to guarantee unbiased detection.
+- Delivers a production-grade, browser-safe Streamlit web application with automated WebM preview transcoding and cryptographically verified model artifact delivery.
 
 ---
 
 ## 2. Key Features
 
-- **Spatio-Temporal Detection**: Evaluates 10-frame face clips to detect both intra-frame blending boundaries and inter-frame motion flicker.
-- **Bidirectional Recurrent Context**: BiLSTM processes forward and backward temporal sequences to resolve forward and reverse frame inconsistencies.
-- **Temporal Attention Explainability**: Computes normalized attention coefficients $\alpha_t$ across frames, highlighting the exact moments of synthetic manipulation.
-- **Video-Level Aggregation**: Aggregates predictions across multiple temporal segments for robust whole-video forensic verdicts.
-- **Class-Collapse Resolution**: Balanced batch sampling (50% Real / 50% Fake) guarantees gradient balance and overcomes extreme training set imbalance.
-- **Zero-Leakage Benchmark Protocol**: Strictly isolates the official 518-video Celeb-DF v2 test split (`List_of_testing_videos.txt`) during both training and threshold calibration.
-- **Dual Model Support**: Supports switching between the standalone synthetic prototype checkpoint and the trained real-experiment model.
-- **Production-Ready Web UI**: Forensic video player, confidence gauges, frame-by-frame attention inspection, and downloadable JSON/HTML reports.
-- **Comprehensive Test Suite**: 56 automated tests covering data loading, model architecture, attention layer properties, leakage detection, and UI safety.
+- **Spatio-Temporal Hybrid Analysis**: Joint spatial feature extraction (CNN) and bidirectional temporal sequence modeling (BiLSTM) over 10-frame sequences.
+- **Explainable Temporal Attention**: Computes normalized attention weights ($\alpha_t$) identifying the exact peak frames contributing most heavily to the classification verdict.
+- **Calibrated Decision Boundary**: Locked threshold $\tau^* = 0.39$ calibrated on validation data to maximize balanced accuracy and eliminate arbitrary 0.5 classification bias.
+- **Browser-Safe Media Transcoding Engine**: Converts incompatible raw container streams (e.g., `mp4v`, `FMP4`) to browser-safe WebM for instant client playback while preserving original bitstreams for tensor extraction.
+- **Dynamic Class-Balanced Sampling**: Enforces exact 50% Real / 50% Fake gradient contributions per batch, preventing majority-class collapse on Celeb-DF v2's 8.5:1 imbalance.
+- **Zero-Leakage Benchmark Protocol**: Guarantees zero subject or video leakage by strictly isolating Celeb-DF v2's official 518-video test split (`List_of_testing_videos.txt`).
+- **Cryptographic Model Delivery**: Automates SHA-256 verified runtime delivery of production weights from GitHub Release assets without polluting Git history with binary blobs.
+- **Forensic Audit & Export**: Session audit trail logging, confidence distribution gauges, and downloadable forensic reports in both JSON and HTML formats.
+- **Robust Automated Test Suite**: 57 automated tests covering data processing, model layers, attention arithmetic, serialization integrity, and UI safety.
 
 ---
 
-## 3. Demo / Preview — DeepTrace
+## 3. Forensic Workspace & Live Interface
 
-The application features **DeepTrace**, a cybersecurity-grade AI forensic analysis interface built with Streamlit (`http://localhost:8501`):
+The production application is deployed live on Streamlit Cloud at **[deeptrace-forensics.streamlit.app](https://deeptrace-forensics.streamlit.app/)**. The interface provides a modular forensic investigation suite:
 
-- **Product Identity**: DeepTrace — AI-Powered Deepfake Forensic Analysis with dark cinematic styling and live model status indicator (`MODEL ONLINE`).
-- **Main Workflow**: Upload / Select Video → Analyze Video → 2-Second Result Hero (`REAL` / `FAKE`) → Fake Probability (%) vs Decision Threshold ($\tau^* = 0.39$) → Temporal Forensic Evidence & Important Frame Viewer → Compact Forensic Summary & Technical Details.
-- **Model Checkpoint Selector**: Transparent switching between Production V2 Model (`outputs/best_model.keras`) and Demonstration Prototype (`outputs/demo/best_model.keras`).
-- **Temporal Attention Explainability**: Top 3–5 high-influence frame thumbnails with timestamps, attention percentages, and distribution plots.
-- **Deployment Ready**: Self-contained, zero-login, and immediately usable upon launch on Streamlit Community Cloud or local servers.
+| Workspace Module | Capabilities & Workflow |
+| :--- | :--- |
+| **🔍 Forensic Analysis** | Ingests video containers (MP4, MOV, AVI, MKV), initiates real-time OpenCV Haar face tracking, extracts 3 equidistant temporal clips (10 frames each), and renders the calibrated binary verdict with dual confidence gauges. |
+| **⏱️ Temporal Attention** | Generates dynamic attention curves ($\alpha_t$) across all frames, highlighting exact high-discrepancy temporal moments where the network identified facial synthesis anomalies. |
+| **🧩 Keyframe Evidence** | Interactive frame inspector displaying cropped, margin-expanded facial crops alongside per-frame attention contributions and detection bounding boxes. |
+| **📊 Confidence Calibration** | Real-time gauge visualizing the calibrated decision boundary ($\tau^* = 0.39$), distance-to-boundary metrics, and inconclusive margin alerts ($0.34 \le P \le 0.44$). |
+| **📜 Forensic Audit Report** | Produces timestamped session audit trails and one-click downloadable forensic intelligence reports in structured JSON and styled HTML formats. |
+| **🔬 Architecture Inspector** | Full neural topology breakdown detailing parameter counts, receptive fields, and layer activations from TimeDistributed Conv4 through BiLSTM to Temporal Attention. |
+
+> **Live Application**: [Launch DeepTrace Forensics](https://deeptrace-forensics.streamlit.app/)  
+> *(Live demo loads verified production weights with sub-second inference latency on standard cloud CPU compute)*
 
 ---
 
@@ -54,346 +90,314 @@ The application features **DeepTrace**, a cybersecurity-grade AI forensic analys
 
 ```mermaid
 graph TD
-    A[Input Video .mp4] --> B[Temporal Clip Segmentation]
-    B --> C[Haar Cascade Face Detection & Margin Crop]
-    C --> D["Clip Tensor: (10, 128, 128, 3) uint8"]
-    D --> E[Normalization & Rescaling to [-1, 1]]
-    E --> F[TimeDistributed 4-Block CNN + GAP]
-    F --> G["Temporal Feature Embeddings: (10, 128)"]
-    G --> H[Bidirectional LSTM 128 Units]
-    H --> I["Recurrent States: (10, 256)"]
-    I --> J[Temporal Attention Pooling Layer 64 Units]
-    J --> K["Attention Context Vector (256) + Frame Weights alpha_t"]
-    K --> L[Dense Layer 128 Units ReLU]
-    L --> M[Sigmoid Activation Head]
-    M --> N["Clip Manipulation Probability P(Fake)"]
-    N --> O[Mean Pooling Aggregation across Clips]
-    O --> P{Decision Threshold tau = 0.39}
+    A[Input Video Container: MP4 / MOV / AVI / MKV] --> B[Temporal Clip Segmentation: 3 Uniform Segments]
+    A --> C[Browser-Safe WebM Transcoder]
+    C --> D[HTML5 Forensic Media Player & Playback]
+    
+    B --> E[OpenCV Haar Cascade Face Detector + 25% Margin Crop]
+    E --> F["Normalized Tensor: (10, 128, 128, 3) Scaled to [-1, 1]"]
+    
+    F --> G[TimeDistributed 4-Block CNN Feature Extractor]
+    G --> H[Global Average Pooling: (10, 128)]
+    
+    H --> I[Bidirectional LSTM: 128 Units Each Direction]
+    I --> J["Recurrent Forward-Backward Sequence: (10, 256)"]
+    
+    J --> K[Temporal Attention Layer: 64 Units]
+    K --> L["Attention Context Vector (256) + Frame Attention Weights alpha_t"]
+    
+    L --> M[Dense Layer 128 Units + ReLU + Dropout 0.3]
+    M --> N[Sigmoid Output Head: Clip Score P_fake]
+    
+    N --> O[Mean Pooling Aggregation across Video Clips]
+    O --> P{Calibrated Decision Threshold: tau = 0.39}
+    
     P -->|P >= 0.39| Q[Verdict: MANIPULATED / FAKE]
     P -->|P < 0.39| R[Verdict: AUTHENTIC / REAL]
 ```
 
 ---
 
-## 5. How It Works
+## 5. Machine Learning Architecture
 
-1. **Temporal Division**: The input video is divided into 3 equal temporal segments. From each segment, 10 frames are sampled evenly.
-2. **Face Extraction**: OpenCV's Haar frontal face cascade locates the subject's face in each frame. A 25% margin is expanded around the bounding box to capture jawline blending artifacts. If detection fails on intermediate frames, the previous valid crop coordinates are reused.
-3. **Spatial Feature Extraction**: Each frame is resized to $128\times128$ RGB and passed through a 4-block CNN. Global average pooling outputs a 128-dimensional embedding per frame.
-4. **Temporal Modeling**: The sequence of 10 frame embeddings is passed into a Bidirectional LSTM ($128$ units each direction, outputting 256 features per step).
-5. **Attention Pooling**: A temporal attention mechanism scores each frame's relevance ($\alpha_t$) and pools the features into an attention-weighted context vector.
-6. **Score Aggregation**: The model outputs a manipulation probability $P(\text{Fake}) \in [0, 1]$ per clip. The final video score is computed by mean pooling across all clips.
+DeepTrace uses a custom neural architecture combining spatial convolution, bidirectional recurrent memory, and parametric attention:
 
----
+| Layer Stage | Specification | Output Shape | Parameters | Functional Role |
+| :--- | :--- | :--- | :---: | :--- |
+| **Input** | `Input(shape=(10, 128, 128, 3))` | `(None, 10, 128, 128, 3)` | 0 | 10 uniformly sampled RGB facial frames |
+| **Rescaling** | `Rescaling(scale=1/127.5, offset=-1.0)` | `(None, 10, 128, 128, 3)` | 0 | Fast numerical scaling to $[-1.0, 1.0]$ |
+| **Conv Block 1** | `Conv2D(16, 3x3)` + `BN(0.9)` + `ReLU` + `MaxPool(2x2)` | `(None, 10, 64, 64, 16)` | 496 | Low-level edge and boundary filters |
+| **Conv Block 2** | `Conv2D(32, 3x3)` + `BN(0.9)` + `ReLU` + `MaxPool(2x2)` | `(None, 10, 32, 32, 32)` | 4,768 | Intermediate texture and color transitions |
+| **Conv Block 3** | `Conv2D(64, 3x3)` + `BN(0.9)` + `ReLU` + `MaxPool(2x2)` | `(None, 10, 16, 16, 64)` | 18,752 | Facial component alignment representations |
+| **Conv Block 4** | `Conv2D(128, 3x3)` + `BN(0.9)` + `ReLU` + `MaxPool(2x2)` | `(None, 10, 8, 8, 128)` | 74,368 | High-level synthesis artifact abstractions |
+| **Spatial GAP** | `GlobalAveragePooling2D()` | `(None, 10, 128)` | 0 | Spatially condensed frame embedding |
+| **Dropout 1** | `Dropout(rate=0.4)` | `(None, 10, 128)` | 0 | Feature regularization |
+| **BiLSTM** | `Bidirectional(LSTM(128, return_sequences=True))` | `(None, 10, 256)` | 263,168 | Models forward and reverse temporal sequence dependencies |
+| **Temporal Attention** | `TemporalAttention(units=64)` | `(None, 256)` | 16,513 | Learns frame importance coefficients $\alpha_t$ and pools context |
+| **Dropout 2** | `Dropout(rate=0.4)` | `(None, 256)` | 0 | Regularization before classification head |
+| **Dense Head** | `Dense(128, activation="relu")` | `(None, 128)` | 32,896 | Non-linear forensic classification mapping |
+| **Dropout 3** | `Dropout(rate=0.3)` | `(None, 128)` | 0 | Classifier regularization |
+| **Classifier** | `Dense(1, activation="sigmoid")` | `(None, 1)` | 129 | Single scalar manipulation probability $P(\text{Fake})$ |
 
-## 6. CNN-BiLSTM-Attention Model Details
-
-| Layer Component | Specification | Output Dimension | Notes |
-| :--- | :--- | :--- | :--- |
-| **Input** | `Input(shape=(10, 128, 128, 3), dtype=uint8)` | `(None, 10, 128, 128, 3)` | Raw RGB video frames |
-| **Rescaling** | `Rescaling(scale=1/127.5, offset=-1.0)` | `(None, 10, 128, 128, 3)` | Scaled to `[-1.0, 1.0]` |
-| **Conv Block 1** | `Conv2D(16, 3x3)` + `BN(0.9)` + `ReLU` + `MaxPool(2x2)` | `(None, 10, 64, 64, 16)` | Low-level edge features |
-| **Conv Block 2** | `Conv2D(32, 3x3)` + `BN(0.9)` + `ReLU` + `MaxPool(2x2)` | `(None, 10, 32, 32, 32)` | Texture & boundary features |
-| **Conv Block 3** | `Conv2D(64, 3x3)` + `BN(0.9)` + `ReLU` + `MaxPool(2x2)` | `(None, 10, 16, 16, 64)` | Facial component features |
-| **Conv Block 4** | `Conv2D(128, 3x3)` + `BN(0.9)` + `ReLU` + `MaxPool(2x2)` | `(None, 10, 8, 8, 128)` | High-level synthesis artifacts |
-| **GAP** | `GlobalAveragePooling2D()` | `(None, 10, 128)` | Compact spatial vector |
-| **Dropout 1** | `Dropout(0.4)` | `(None, 10, 128)` | Regularization |
-| **BiLSTM** | `Bidirectional(LSTM(128, return_sequences=True))` | `(None, 10, 256)` | Bidirectional temporal context |
-| **Attention** | `TemporalAttention(64)` | `(None, 256)` | Attention pooling + frame weights $\alpha_t$ |
-| **Dropout 2** | `Dropout(0.4)` | `(None, 256)` | Regularization |
-| **Dense** | `Dense(128, activation="relu")` | `(None, 128)` | Representation head |
-| **Dropout 3** | `Dropout(0.3)` | `(None, 128)` | Regularization |
-| **Head** | `Dense(1, activation="sigmoid")` | `(None, 1)` | Manipulation probability |
-
-- **Total Parameters**: 411,105 (410,625 trainable).
-- **Inference Latency**: ~0.20s per clip on standard CPU.
+- **Total Parameters**: 411,105 (410,625 trainable)
+- **Model Checkpoint Size**: 4.07 MB (`outputs/best_model.keras`)
+- **CPU Inference Latency**: ~0.18s per clip on standard compute
 
 ---
 
-## 7. Dataset: Celeb-DF v2
+## 6. Face Detection & Temporal Tracking Pipeline
 
-The model was trained and evaluated on the authentic **Celeb-DF (v2)** dataset:
-
-| Partition | Real Videos | Fake Videos | Total Videos | Real Clips | Fake Clips | Total Clips |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Train** | 604 | 4,504 | 5,108 | 1,812 | 13,511 | **15,323** |
-| **Validation** | 107 | 795 | 902 | 321 | 2,385 | **2,706** |
-| **Official Held-Out Test** | 178 | 340 | 518 | 534 | 1,020 | **1,554** |
-| **Total** | **889** | **5,639** | **6,528** | **2,667** | **16,916** | **19,583** |
-
-*Note: Celeb-DF v2 is not distributed within this repository. Access must be obtained via academic request from the official dataset authors.*
+1. **Uniform Temporal Windowing**: The video duration is segmented into 3 equidistant temporal blocks. Within each block, 10 frames are uniformly indexed:
+   $$t_i = \left\lfloor i \cdot \frac{N_{\text{frames}}}{T} \right\rfloor, \quad i \in \{0, 1, \dots, T-1\}$$
+2. **Haar Frontal Cascade**: OpenCV's `haarcascade_frontalface_default.xml` scans each sampled frame for facial landmarks.
+3. **25% Boundary Expansion**: When a bounding box $(x, y, w, h)$ is located, a 25% proportional margin is appended:
+   $$x' = \max\left(0, x - 0.25w\right), \quad y' = \max\left(0, y - 0.25h\right)$$
+   $$w' = w + 0.50w, \quad h' = h + 0.50h$$
+   This ensures jawlines, hairlines, and blending borders where face-swapping seam artifacts cluster are preserved.
+4. **Temporal Box Smoothing & Interpolation**: If a face is momentarily obscured or undetected on an intermediate frame, the pipeline reuses the nearest verified bounding coordinates, falling back to a center crop only when no face is found across the clip.
 
 ---
 
-## 8. Data Preprocessing
+## 7. Temporal Attention Explainability
 
-Implemented in [`preprocess.py`](preprocess.py):
-- **Resumable Pipeline**: SHA-256 fingerprint caching ensures existing processed clips are validated and skipped, allowing interrupted runs to resume instantly.
-- **Bounding Box Tracking**: OpenCV Haar cascades detect faces; when detection drops intermittently, the last verified box is maintained.
-- **Uniform Clipping**: 3 clips per video, each consisting of 10 uniformly spaced frames saved as individual `.npy` arrays.
-- **Atomic Writes**: Metadata entries are committed atomically via temporary files to avoid corrupted records.
+Standard temporal pooling (e.g., Global Average Pooling over time) dilutes sudden, localized manipulation artifacts. DeepTrace implements a trainable **Temporal Attention** mechanism:
 
----
+1. **Relevance Scoring**: For each temporal recurrent state $h_t \in \mathbb{R}^{256}$ ($t = 1, \dots, 10$):
+   $$u_t = \tanh(W_a h_t + b_a), \quad W_a \in \mathbb{R}^{64 \times 256}, \ b_a \in \mathbb{R}^{64}$$
+2. **Normalized Frame Attention**:
+   $$\alpha_t = \frac{\exp(v_a^\top u_t)}{\sum_{j=1}^{10} \exp(v_a^\top u_j)}, \quad v_a \in \mathbb{R}^{64}, \quad \sum_{t=1}^{10} \alpha_t = 1.0$$
+3. **Context Pooling**:
+   $$c = \sum_{t=1}^{10} \alpha_t h_t, \quad c \in \mathbb{R}^{256}$$
 
-## 9. Training Strategy & Optimization
-
-- **Framework**: TensorFlow 2.20 / Keras 3.13.
-- **Hardware Acceleration**: Intel oneDNN AVX2 SIMD instructions utilized on CPU.
-- **Optimizer**: Adam ($\text{initial lr} = 0.0005$, $\beta_1 = 0.9, \beta_2 = 0.999$).
-- **Batch Size**: 16 clips (160 frames/batch).
-- **Epochs**: 4 full epochs (958 batches per epoch, totaling 3,832 gradient updates).
-- **Learning Rate Scheduling**: `ReduceLROnPlateau` (factor=0.5, patience=2, min_lr=1e-6).
-- **Training Duration**: ~68 minutes.
+The resulting coefficients $\alpha_t$ represent each frame's contribution to the classification decision. In the DeepTrace user interface, the top attention frames are ranked and rendered as visual evidence cards with exact timestamps and percentage distributions.
 
 ---
 
-## 10. Class Balancing Strategy
+## 8. Calibration & Decision Threshold
 
-Celeb-DF v2 contains an 8.5:1 ratio of manipulated videos to authentic videos (88.2% fake). Naive cross-entropy models quickly fall into a majority-class collapse where every video is predicted as fake.
+In real-world deepfake forensic analysis, arbitrary default thresholds (such as 0.5) produce sub-optimal tradeoffs, particularly on class-imbalanced data. 
 
-To solve this:
-1. **Dynamic Balanced Batches**: [`dataset.py`](dataset.py) constructs each training batch with an exact 50/50 ratio: **8 Real clips and 8 Fake clips**.
-2. **Resampling with Augmentation**: Real clips are cycled with uniform random horizontal flips (50% probability) and random photometric brightness jitter ($\pm 25$ intensity values) applied coherently across all frames of the clip.
-3. **Unmodified Test Distribution**: Evaluation datasets (validation and test) retain their natural, unmodified class distributions.
-
----
-
-## 11. Evaluation Methodology
-
-- **Strict Isolation**: The 518 test videos defined in `List_of_testing_videos.txt` are never seen during training or tuning ($\text{Train} \cap \text{Test} = \emptyset$, $\text{Val} \cap \text{Test} = \emptyset$).
-- **Validation-Locked Threshold**: Candidate thresholds were evaluated strictly on the validation split. A threshold of $\tau^* = \mathbf{0.3900}$ was selected to maximize Validation Balanced Accuracy (81.20%) and Validation F1 (90.96%).
-- **Locked Benchmark Evaluation**: The test set was evaluated once using the locked threshold $\tau^* = 0.3900$. No post-hoc tuning was performed on test data.
-
----
-
-## 12. Final Measured Results
-
-All metrics represent actual measured values on **100% of the official held-out Celeb-DF v2 test split** (1,554 clips across 518 distinct videos):
-
-| Metric | Clip-Level (1,554 clips) | Video-Level (518 videos) | V1 Baseline (Video) | Details |
-| :--- | :---: | :---: | :---: | :--- |
-| **Accuracy** | **80.31%** | **81.27%** | 76.06% | 1,248 / 1,554 clips; 421 / 518 videos (+5.21% gain) |
-| **Balanced Accuracy** | **79.11%** | **79.71%** | 77.75% | Unbiased average of Real and Fake recall (+1.96% gain) |
-| **Precision** | **86.50%** | **86.49%** | 89.13% | Positive predictive value (Fake class) |
-| **Recall (Fake Recall)** | **82.94%** | **84.71%** | 72.35% | 846 / 1,020 fake clips; 288 / 340 fake videos (+12.36% gain) |
-| **REAL Recall** | **75.28%** | **74.72%** | 83.15% | 402 / 534 real clips; 133 / 178 real videos |
-| **F1 Score** | **84.68%** | **85.59%** | 79.87% | Harmonic mean of precision and recall (+5.72% gain) |
-| **ROC-AUC** | **87.72%** | **88.22%** | 87.64% | Area under the ROC curve (+0.58% gain) |
-| **Total Test Samples** | **1,554 clips** | **518 videos** | 518 videos | 178 Real videos, 340 Fake videos |
-
----
-
-## 13. Confusion Matrices
-
-![Confusion Matrix](docs/assets/confusion_matrix.png)
-
-### Video-Level Confusion Matrix (518 Videos)
-$$\begin{pmatrix} \text{TN} & \text{FP} \\ \text{FN} & \text{TP} \end{pmatrix} = \begin{pmatrix} 133 & 45 \\ 52 & 288 \end{pmatrix}$$
-
-- **True Negatives (TN)**: **133** authentic videos correctly identified as REAL (74.72% Real Recall).
-- **False Positives (FP)**: **45** authentic videos misclassified as FAKE (25.28% False Alarm Rate).
-- **False Negatives (FN)**: **52** manipulated videos misclassified as REAL (15.29% Miss Rate).
-- **True Positives (TP)**: **288** manipulated videos correctly identified as FAKE (84.71% Fake Detection Rate).
-
-### Clip-Level Confusion Matrix (1,554 Clips)
-$$\begin{pmatrix} \text{TN} & \text{FP} \\ \text{FN} & \text{TP} \end{pmatrix} = \begin{pmatrix} 402 & 132 \\ 174 & 846 \end{pmatrix}$$
-
----
-
-## 14. ROC Curves & AUC Analysis
-
-![ROC Curve](docs/assets/roc_curve.png)
-
-- **Video-Level ROC-AUC**: **0.8822** (88.22%)
-- **Clip-Level ROC-AUC**: **0.8772** (87.72%)
-- The elevated AUC curves verify that the Bidirectional LSTM and Temporal Attention pooling provide consistent probability separation across the entire discrimination spectrum. Detailed V1 vs V2 comparisons are documented in [`docs/model_comparison.md`](docs/model_comparison.md).
-
----
-
-## 15. Project Structure
+DeepTrace performs **Validation-Isolated Threshold Calibration**:
+- Model training and threshold selection are completely decoupled from the test set.
+- Threshold candidates $\tau \in [0.10, 0.90]$ were scanned on the isolated validation set.
+- Threshold **$\tau^* = 0.3900$** was chosen to balance sensitivity and specificity, yielding:
+  - Optimal balance between Real Recall and Fake Detection Rate.
+  - A calibrated **Inconclusive Band** between $0.34$ and $0.44$, alerting analysts when model predictions fall near the decision boundary.
 
 ```text
-deepfake-detector-main/
-├── app.py                     # Streamlit forensic web application
-├── config.py                  # Dataclass configuration and hyperparameter constants
-├── dataset.py                 # tf.data pipeline with dynamic balanced batch generator
-├── demo.py                    # Self-contained procedural prototype pipeline
-├── evaluate.py                # Official held-out test split evaluation suite
-├── model.py                   # TimeDistributed CNN + LSTM architecture definition
-├── predict.py                 # Single-video CLI inference entrypoint
-├── preprocess.py              # Haar face extraction, segmenting, and meta.csv generator
-├── theme.py                   # Ultraviolet Forensics design palette and color tokens
-├── train.py                   # Full training script with ValidationDiagnosticsCallback
-├── ui_helpers.py              # UI report generation, metrics rendering, and charts
-├── ui_styles.py               # Custom CSS styling tokens and container themes
-├── validate_dataset.py        # Leakage verification and data integrity audits
-├── requirements.txt           # Production dependencies
-├── pytest.ini                 # Pytest runner configuration
-├── docs/
-│   └── assets/                # Lightweight documentation figures (confusion matrix, ROC)
-├── tests/
-│   ├── test_pipeline.py       # Pipeline, model shape, serialization, and leakage tests
-│   └── test_ui.py             # UI rendering, report generation, and palette tests
-└── outputs/                   # (Ignored by Git) Checkpoints, metrics, and training logs
-    ├── best_model.keras       # Trained Real Experiment Model checkpoint
-    ├── final_threshold.json   # Locked validation threshold (0.3900)
-    ├── metrics.json           # Machine-readable test evaluation metrics
-    └── predictions.csv        # Per-clip and per-video predictions on test set
+Decision Rules:
+- P(Fake) < 0.34       --> Confident AUTHENTIC (REAL)
+- 0.34 <= P <= 0.44  --> INCONCLUSIVE (Low-confidence zone near boundary)
+- P(Fake) > 0.44       --> Confident MANIPULATED (FAKE)
+- Strict binary cutoff: tau* = 0.3900
 ```
 
 ---
 
-## 16. Installation
+## 9. Benchmark Evaluation: Celeb-DF v2
+
+DeepTrace was trained and evaluated on **Celeb-DF v2**, one of the most challenging, high-quality public deepfake benchmarks:
+
+| Dataset Split | Real Videos | Fake Videos | Total Videos | Real Clips | Fake Clips | Total Clips |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Training** | 604 | 4,504 | 5,108 | 1,812 | 13,511 | 15,323 |
+| **Validation** | 107 | 795 | 902 | 321 | 2,385 | 2,706 |
+| **Official Held-Out Test** | 178 | 340 | **518** | 534 | 1,020 | **1,554** |
+| **Total Benchmark** | **889** | **5,639** | **6,528** | **2,667** | **16,916** | **19,583** |
+
+*Protocol Isolation Guarantee*: The 518 test videos defined in `List_of_testing_videos.txt` were completely held out and never used during training, hyperparameter optimization, or threshold calibration.
+
+---
+
+## 10. Official Performance Metrics & Visualizations
+
+Measured on 100% of the official held-out Celeb-DF v2 test split (518 distinct videos, 1,554 clips) at locked threshold $\tau^* = 0.39$:
+
+| Metric | Measured Test Result | Interpretation |
+| :--- | :---: | :--- |
+| **Video Accuracy** | **81.27%** | 421 / 518 videos correctly classified |
+| **Balanced Accuracy** | **79.71%** | Unbiased mean of real recall and fake recall |
+| **Precision** | **86.49%** | Accuracy of positive (fake) predictions |
+| **Fake Recall (Sensitivity)** | **84.71%** | 288 / 340 manipulated videos caught |
+| **Real Recall (Specificity)** | **74.72%** | 133 / 178 authentic videos correctly verified |
+| **F1-Score** | **85.59%** | Harmonic mean of precision and recall |
+| **ROC-AUC** | **88.22%** | Area under the Receiver Operating Characteristic curve |
+
+### Confusion Matrix (518 Test Videos)
+$$\begin{pmatrix} \text{TN: Authentic Verified} & \text{FP: False Alarm} \\ \text{FN: Missed Manipulation} & \text{TP: Deepfake Detected} \end{pmatrix} = \begin{pmatrix} 133 & 45 \\ 52 & 288 \end{pmatrix}$$
+
+### Official Benchmark Curves
+<p align="center">
+  <img src="docs/assets/roc_curve.png" width="48%" alt="DeepTrace Test ROC Curve (AUC = 88.22%)" />
+  <img src="docs/assets/confusion_matrix.png" width="48%" alt="DeepTrace Held-Out Test Confusion Matrix" />
+</p>
+
+---
+
+## 11. Verified Reference Samples
+
+Verified through both local CLI inference and the live public Streamlit Cloud deployment:
+
+### 1. Authentic Human Video (`Celeb-real/id0_0000.mp4`)
+```text
+Video Source: Celeb-DF v2 Real Benchmark
+Target Resolution: 942x500 @ 30.0 FPS (15.6s)
+Face Detection: 30 / 30 frames (100.0% Haar face tracking)
+Clips Analyzed: 3 clips (10 frames each)
+Calculated Verdict: AUTHENTIC (REAL)
+Manipulation Probability: 7.33% (0.0733)
+Authentic Probability: 92.67% (0.9267)
+Peak Attention Frames: Frame #155 (14.73%), Frame #0 (12.93%), Frame #137 (11.61%)
+Decision: P(Fake) << 0.39 Cutoff --> Confident Authentic
+```
+
+### 2. Synthesized Deepfake Video (`Celeb-synthesis/id0_id16_0000.mp4`)
+```text
+Video Source: Celeb-DF v2 Synthesis Benchmark
+Target Resolution: 944x500 @ 30.0 FPS (15.6s)
+Face Detection: 30 / 30 frames (100.0% Haar face tracking)
+Clips Analyzed: 3 clips (10 frames each)
+Calculated Verdict: MANIPULATED (FAKE)
+Manipulation Probability: 79.25% (0.7925)
+Authentic Probability: 20.75% (0.2075)
+Per-Clip Probabilities: Clip 1: 78.6%, Clip 2: 73.7%, Clip 3: 85.5%
+Peak Attention Frames: Frame #188 (16.19%), Frame #204 (12.21%), Frame #117 (10.27%)
+Decision: P(Fake) >> 0.39 Cutoff --> Confident Manipulation
+```
+
+---
+
+## 12. Technology Stack
+
+- **Core Deep Learning**: TensorFlow 2.16+, Keras 3 (TimeDistributed, BiLSTM, Custom Layers)
+- **Computer Vision**: OpenCV (Headless) 4.8+ (video container reading, Haar cascade face tracking, frame normalization)
+- **Web Interface**: Streamlit 1.30+ (Reactive UI, media streaming, session audit tracking)
+- **Data Engineering**: NumPy 1.24+, Pandas 2.0+, Scikit-Learn 1.3+
+- **Data Visualization**: Plotly 5.0+, Matplotlib 3.7+
+- **Quality Assurance**: Pytest 7.0+ (57 unit, pipeline, and UI AppTest integration tests)
+- **Runtime Environment**: Python 3.11 Linux container (Streamlit Community Cloud)
+
+---
+
+## 13. Project Structure
+
+```text
+deepfake-detector/
+├── app.py                     # Streamlit forensic workspace (6 interactive tabs)
+├── config.py                  # Pipeline configuration, threshold constants, and model fetcher
+├── dataset.py                 # Balanced batch generator with online augmentations
+├── demo.py                    # Procedural synthetic prototype generator
+├── evaluate.py                # Official held-out test split evaluation suite
+├── model.py                   # TimeDistributed CNN + BiLSTM + TemporalAttention layers
+├── predict.py                 # Standalone single-video CLI inference entrypoint
+├── preprocess.py              # Haar face extraction, segmenting, and metadata generator
+├── theme.py                   # Dark SaaS forensic color tokens and styling constants
+├── train.py                   # Training loop with validation callbacks
+├── train_v2.py                # V2 production model training script
+├── ui_helpers.py              # Media transcoding, chart builders, and report generators
+├── ui_styles.py               # Custom CSS design tokens and container styles
+├── validate_dataset.py        # Dataset partition audits and leakage verification
+├── requirements.txt           # Verified production dependencies
+├── pytest.ini                 # Pytest test discovery configuration
+├── docs/                      # Documentation figures and benchmark comparisons
+├── tests/
+│   ├── test_pipeline.py       # Pipeline, model shape, serialization, and leakage tests
+│   └── test_ui.py             # UI rendering, report generation, and AppTest tests
+└── outputs/                   # (Git-ignored) Model artifacts and training logs
+    └── best_model.keras       # Verified production model (4.07 MB)
+```
+
+---
+
+## 14. How to Run Locally
 
 ### Prerequisites
-- Python 3.10 to 3.13
+- Python 3.10 to 3.12
 - Git
 
-### Setup
+### Installation
 ```bash
-# Clone the repository
+# 1. Clone repository
 git clone https://github.com/dheerajkmahale/deepfake-detector.git
 cd deepfake-detector
 
-# Create and activate virtual environment
+# 2. Create virtual environment
 python -m venv venv
 # On Windows:
-.\venv\Scripts\Activate.ps1
-# On macOS/Linux:
+.\venv\Scripts\activate
+# On Linux/macOS:
 source venv/bin/activate
 
-# Install dependencies
+# 3. Install dependencies
 pip install -r requirements.txt
 ```
 
----
-
-## 17. How to Run
-
-### 1. Data Preprocessing
+### Launch the Web Application
 ```bash
-# Preprocess Celeb-DF v2 videos using the official test list
-python preprocess.py --raw-dir data/raw --output-dir data/processed --test-list data/raw/List_of_testing_videos.txt
+streamlit run app.py
 ```
+Open `http://localhost:8501` in your browser. On startup, DeepTrace verifies or downloads the production model checkpoint and initializes the forensic workspace.
 
-### 2. Model Training
+### Run Single-Video CLI Inference
 ```bash
-# Train CNN-LSTM on full training split with balanced batch sampling
-python train.py --processed-dir data/processed --output-dir outputs --epochs 4 --batch-size 16 --lr 0.0005
+python predict.py path/to/video.mp4 --threshold 0.39
 ```
 
-### 3. Held-Out Benchmark Evaluation
-```bash
-# Evaluate against official held-out test split using locked validation threshold
-python evaluate.py --model-path outputs/best_model.keras --processed-dir data/processed --threshold-file outputs/final_threshold.json
-```
-
-### 4. Single-Video Inference CLI
-```bash
-# Run prediction on any target video
-python predict.py path/to/video.mp4 --model-path outputs/best_model.keras --threshold 0.39
-```
-
----
-
-## 18. Streamlit Web Application (DeepTrace)
-
-To launch the DeepTrace forensic analysis application locally:
-
-```bash
-streamlit run app.py --server.port 8501
-```
-
-The application will start at `http://localhost:8501`.
-
-### Deployment to Streamlit Community Cloud:
-DeepTrace is designed to be fully self-contained and deployment-ready:
-1. Push repository to GitHub (ensuring no large video files, `.zip`, or `.npy` files are tracked).
-2. Link repository to [Streamlit Community Cloud](https://share.streamlit.io).
-3. Set main file path to `app.py`.
-4. No database, user accounts, authentication keys, or paid external APIs are required. The interface initializes immediately upon launch.
-
-### UI Sections:
-1. **Analyze (Core Forensic Flow)**: Upload videos (MP4, MOV, AVI, MKV) or select authentic benchmarks, run 7-stage neural inference, view immediate Result Hero (`REAL` / `FAKE`), examine top 3 frame thumbnail evidence cards, and inspect technical model parameters.
-2. **Batch**: Multi-video forensic batch queue with exportable CSV audit report.
-3. **History**: Persistent session audit log tracking verdicts and timestamps.
-4. **Model & Results**: Official Celeb-DF v2 benchmark statistics, ROC curve, and confusion matrix.
-5. **How It Works**: Interactive architectural walkthrough of CNN, BiLSTM, and Temporal Attention layers.
-6. **About & Limitations**: Technical constraints, supported resolutions, and probabilistic legal notice.
-
----
-
-## 19. Example CLI Predictions
-
-### Authentic Real Video
-```bash
-python predict.py data/raw/real/Celeb-real/id0_0000.mp4 --model-path outputs/best_model.keras --threshold 0.39
-```
-```text
-Clips analysed: 3
-P(fake): 0.0733
-Verdict: REAL (Authentic)
-```
-
-### Deepfake Video
-```bash
-python predict.py data/raw/fake/Celeb-synthesis/id0_id16_0000.mp4 --model-path outputs/best_model.keras --threshold 0.39
-```
-```text
-Clips analysed: 3
-P(fake): 0.7925
-Verdict: FAKE (Manipulated)
-```
-
----
-
-## 20. Testing & Verification
-
-Run the automated test suite:
-
+### Run Automated Test Suite
 ```bash
 pytest -q
 ```
-
-**Result**: `56 passed in 29.02s` (100% test pass rate across all unit, pipeline, attention, and UI suites).
-
----
-
-## 21. Limitations
-
-While the model demonstrates strong discrimination on Celeb-DF v2, users should consider the following operational constraints:
-- **Severe Compression**: Heavy social media re-compression (e.g., WhatsApp, X) degrades subtle high-frequency blending boundaries.
-- **Extreme Lighting & Occlusions**: Profile angles, dark environments, or heavy occlusions (sunglasses, masks) can reduce Haar cascade detection confidence.
-- **Unseen Synthesis Generators**: Zero-shot generalization to newer diffusion-based generative heads (e.g., Sora, LivePortrait) may yield lower confidence than seen GAN-based swap pipelines.
-- **Resolution Dependencies**: Input frames are resized to $128\times128$; minute microscopic artifacts below this resolution cannot be resolved.
+*Expected Result*: `57 passed`
 
 ---
 
-## 22. Responsible Use & Forensic Notice
+## 15. Safe Production Model Delivery
 
-DeepTrace is intended exclusively as an **AI-assisted forensic decision-support tool** for researchers, cybersecurity professionals, and digital forensic investigators.
-- **Probabilistic Nature**: All outputs represent statistical estimations derived from learned spatial and temporal artifact patterns.
-- **Not Legal Proof**: Predictions should not be treated as standalone or definitive proof of authenticity or manipulation in judicial proceedings.
-- **Human in the Loop**: Forensic analysts should always evaluate model results in conjunction with holistic contextual evidence, cryptographic provenance, and metadata analysis.
+To maintain a clean Git repository history, binary model checkpoints (`*.keras`) and large video files are excluded from Git tracking via `.gitignore`. 
 
----
-
-## 23. Future Improvements
-
-- **Transformer Backbones**: Replacing Conv2D blocks with lightweight Vision Transformers (ViT / Swin) to model global context.
-- **Optical Flow Stream**: Adding an explicit Farnebäck optical flow stream to measure physical landmark trajectories.
-- **Audio-Visual Inconsistency**: Ingesting vocal audio tracks to measure phoneme-to-viseme lip synchronization anomalies.
-- **Cross-Dataset Generalization**: Benchmarking against FaceForensics++ (FF++) and the Deepfake Detection Challenge (DFDC).
+On application startup, [`config.py`](config.py) executes automated artifact delivery:
+1. **Local Integrity Check**: Checks for `outputs/best_model.keras`. If present, computes its SHA-256 hash.
+2. **Automated Download**: If missing or corrupted, downloads the production model from the official GitHub Release asset (`v2.0.0-model`).
+3. **Cryptographic Validation**: Compares the downloaded file against the locked SHA-256 digest:
+   ```text
+   20b2d5dcf6300f4b001aebc7f73142e29ef6e06bbe55610062dea23425da8689
+   ```
+4. **Enforced Security**: Rejects corrupted files and halts with a clear `MODEL UNAVAILABLE` notification if the checksum fails. Never silently substitutes unverified weights.
 
 ---
 
-## 23. License & Academic Disclaimer
+## 16. Limitations & Technical Disclosures
 
-This project is licensed under the MIT License. The Celeb-DF v2 dataset is the property of its original authors and is used strictly for non-commercial research and educational evaluation.
+- **High Social Media Compression**: Severe lossy re-compression (e.g., heavily forwarded WhatsApp/X clips) removes subtle high-frequency edge gradients, which can increase inconclusive classifications.
+- **Occlusions & Extreme Poses**: Severe profile angles (>60°), dark lighting, or heavy facial occlusions (masks, large sunglasses) degrade Haar cascade face tracking confidence.
+- **Unseen Generative Heads**: The model was trained on GAN and autoencoder swap architectures; zero-shot generalization to newer diffusion-based generative models (e.g., Sora, LivePortrait) may yield lower confidence.
+- **Resolution Floor**: Input crops are scaled to $128\times128$ pixels; spatial manipulation signals smaller than this resolution cannot be resolved.
 
 ---
 
-## 24. Author & Acknowledgments
+## 17. Responsible Use Notice
 
-- **Author**: Dheeraj K Mahale
-- **Dataset Citation**: Yuezun Li, Peng Sun, Qi Shen, and Siwei Lyu. *Celeb-DF: A Large-scale Challenging Dataset for DeepFake Forensics*. IEEE Conference on Computer Vision and Pattern Recognition (CVPR), 2020.
+DeepTrace is engineered as an **AI-assisted forensic decision-support tool** for researchers, journalism integrity analysts, and cybersecurity teams.
+- **Probabilistic Estimations**: All outputs represent statistical likelihoods derived from learned spatio-temporal representations.
+- **Not Judicial Evidence**: DeepTrace verdicts should not be used as sole, definitive proof of authenticity or manipulation in legal or judicial proceedings without corroborating forensic, metadata, and cryptographic evidence.
+- **Human-in-the-Loop**: Automated forensic predictions should always be reviewed alongside contextual provenance by a qualified analyst.
+
+---
+
+## 18. License & Citation
+
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+
+### Citation
+```bibtex
+@misc{mahale2026deeptrace,
+  author = {Dheeraj K Mahale},
+  title = {DeepTrace: AI-Powered Deepfake Forensic Analysis},
+  year = {2026},
+  publisher = {GitHub},
+  howpublished = {\url{https://github.com/dheerajkmahale/deepfake-detector}}
+}
+```
+
+*Celeb-DF v2 Benchmark Reference*:
+> Yuezun Li, Peng Sun, Qi Shen, and Siwei Lyu. *Celeb-DF: A Large-scale Challenging Dataset for DeepFake Forensics*. IEEE Conference on Computer Vision and Pattern Recognition (CVPR), 2020.
