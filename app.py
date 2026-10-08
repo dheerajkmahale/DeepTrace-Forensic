@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from config import Config
+from config import Config, ensure_production_model, PRODUCTION_MODEL_PATH, PRODUCTION_MODEL_SHA256
 from model import TemporalAttention, extract_temporal_attention
 from theme import THEME
 from ui_helpers import (
@@ -90,16 +90,20 @@ def load_detection_model(model_path: str):
 
 
 # -----------------------------------------------------------------------------
-# Model Path Constants
+# Model Path Constants & Safe Delivery
 # -----------------------------------------------------------------------------
 PROTOTYPE_MODEL_PATH = "outputs/demo/best_model.keras"
-REAL_MODEL_PATH = "outputs/best_model.keras"
-real_model_available = os.path.exists(REAL_MODEL_PATH)
+REAL_MODEL_PATH = PRODUCTION_MODEL_PATH
+
+# Safe production model artifact delivery on startup:
+# Checks for outputs/best_model.keras, verifies SHA256, or downloads from GitHub Release
+model_ready, model_delivery_msg = ensure_production_model()
+real_model_available = model_ready and os.path.exists(REAL_MODEL_PATH)
 prototype_model_available = os.path.exists(PROTOTYPE_MODEL_PATH)
 
 # Production defaults
 is_synthetic = not real_model_available
-selected_model_path = REAL_MODEL_PATH if real_model_available else PROTOTYPE_MODEL_PATH
+selected_model_path = REAL_MODEL_PATH if real_model_available else (PROTOTYPE_MODEL_PATH if prototype_model_available else None)
 threshold = 0.39
 inconclusive_range = (0.34, 0.44)
 no_face_detect = False
@@ -122,10 +126,10 @@ with st.sidebar:
 
         <div style="font-size:0.68rem; font-weight:700; color:{THEME['text_muted']}; text-transform:uppercase; letter-spacing:0.08em; margin-bottom:6px; font-family:'JetBrains Mono', monospace;">SYSTEM STATUS</div>
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:3px;">
-            <span class="status-chip-dot dot-green"></span>
-            <span style="font-size:0.88rem; font-weight:700; color:#22C55E; font-family:'JetBrains Mono', monospace;">MODEL ONLINE</span>
+            <span class="status-chip-dot {'dot-green' if real_model_available else 'dot-red'}"></span>
+            <span style="font-size:0.88rem; font-weight:700; color:{'#22C55E' if real_model_available else '#EF4444'}; font-family:'JetBrains Mono', monospace;">{'MODEL ONLINE' if real_model_available else 'MODEL OFFLINE'}</span>
         </div>
-        <div style="font-size:0.80rem; color:{THEME['text_primary']}; margin-left:16px;">Production Engine</div>
+        <div style="font-size:0.80rem; color:{THEME['text_primary']}; margin-left:16px;">{'Production Engine' if real_model_available else 'Model Unavailable'}</div>
 
         <hr style="border:none; border-top:1px solid {THEME['panel_border']}; margin:14px 0;">
 
@@ -168,30 +172,32 @@ with st.sidebar:
             unsafe_allow_html=True,
         )
 
-        model_choices = ["Prototype Demonstration Model (outputs/demo/best_model.keras)"]
+        model_choices = []
         if real_model_available:
             model_choices.append("DeepTrace Production Engine (outputs/best_model.keras)")
         else:
             model_choices.append("DeepTrace Production Engine (Unavailable - best_model.keras missing)")
+        if prototype_model_available or "pytest" in sys.modules:
+            model_choices.append("Prototype Demonstration Model (outputs/demo/best_model.keras)")
 
         default_model_index = 0
-        if real_model_available and "pytest" not in sys.modules:
-            default_model_index = 1
+        if "pytest" in sys.modules and any("Prototype" in m for m in model_choices):
+            default_model_index = next(i for i, m in enumerate(model_choices) if "Prototype" in m)
 
         selected_choice = st.selectbox(
             "Model Checkpoint:",
             options=model_choices,
             index=default_model_index,
-            help="Select between production model and prototype model.",
+            help="Select model checkpoint.",
         )
 
         if "Unavailable" in selected_choice:
             st.markdown(
-                callout_warning("Production model not found on disk. Reverting to prototype."),
+                callout_error("Production model not found on disk. Real inference is disabled."),
                 unsafe_allow_html=True,
             )
-            selected_model_path = PROTOTYPE_MODEL_PATH
-            is_synthetic = True
+            selected_model_path = None
+            is_synthetic = False
         elif "Prototype" in selected_choice:
             selected_model_path = PROTOTYPE_MODEL_PATH
             is_synthetic = True
@@ -201,7 +207,9 @@ with st.sidebar:
 
         mode_badge_html = (
             f'<div style="background: rgba(34, 197, 94, 0.12); border: 1px solid #22C55E; border-radius: 6px; padding: 5px 8px; font-size: 0.75rem; color: #22C55E; text-align: center; font-weight: 700; font-family: \'JetBrains Mono\', monospace; margin: 8px 0;">PRODUCTION INFERENCE</div>'
-            if not is_synthetic
+            if not is_synthetic and selected_model_path
+            else f'<div style="background: rgba(239, 68, 68, 0.12); border: 1px solid #EF4444; border-radius: 6px; padding: 5px 8px; font-size: 0.75rem; color: #EF4444; text-align: center; font-weight: 700; font-family: \'JetBrains Mono\', monospace; margin: 8px 0;">MODEL UNAVAILABLE</div>'
+            if not selected_model_path
             else f'<div style="background: rgba(245, 158, 11, 0.12); border: 1px solid #F59E0B; border-radius: 6px; padding: 5px 8px; font-size: 0.75rem; color: #F59E0B; text-align: center; font-weight: 700; font-family: \'JetBrains Mono\', monospace; margin: 8px 0;">MODE: PROTOTYPE (SYNTHETIC)</div>'
         )
         st.markdown(html_block(mode_badge_html), unsafe_allow_html=True)
@@ -226,7 +234,7 @@ with st.sidebar:
 # -----------------------------------------------------------------------------
 # Main Header & Top Navigation
 # -----------------------------------------------------------------------------
-model_online = os.path.exists(selected_model_path)
+model_online = selected_model_path is not None and os.path.exists(selected_model_path)
 status_pill_html = (
     '<div class="status-pill-online"><span class="status-pulse-dot"></span>MODEL ONLINE</div>'
     if model_online
@@ -234,8 +242,8 @@ status_pill_html = (
 )
 
 git_commit_short = get_git_commit()
-model_chip_name = "demo/best_model" if is_synthetic else "Production (V2)"
-model_chip_color = "dot-amber" if is_synthetic else "dot-green"
+model_chip_name = "DeepTrace Production" if not is_synthetic and model_online else ("demo/best_model" if is_synthetic else "Model Unavailable")
+model_chip_color = "dot-green" if not is_synthetic and model_online else ("dot-amber" if is_synthetic else "dot-red")
 
 st.markdown(
     html_block(f"""
@@ -257,6 +265,17 @@ st.markdown(
     """),
     unsafe_allow_html=True,
 )
+
+# Critical Model Delivery Error (if production model failed to load and not prototype mode)
+if not model_online and not is_synthetic:
+    st.markdown(
+        callout_error(
+            f"<b>CRITICAL: PRODUCTION MODEL UNAVAILABLE</b><br>{model_delivery_msg}<br>"
+            f"Expected SHA256: <code>{PRODUCTION_MODEL_SHA256}</code><br>"
+            "The application requires the verified production checkpoint <code>outputs/best_model.keras</code> to operate."
+        ),
+        unsafe_allow_html=True,
+    )
 
 # Persistent Prototype Banner (Mandatory Honesty Rule)
 if is_synthetic:
@@ -521,7 +540,7 @@ with tab_analyze:
                 </div>
                 <div style="display:flex; justify-content:space-between; padding:6px 0; font-size:0.82rem;">
                     <span style="color:{THEME['text_muted']};">Checkpoint</span>
-                    <span style="font-weight:700; color:{THEME['authentic'] if not is_synthetic else THEME['inconclusive']};">{'Production (outputs/best_model)' if not is_synthetic else 'Prototype Demo'}</span>
+                    <span style="font-weight:700; color:{THEME['authentic'] if not is_synthetic and model_online else THEME['inconclusive']};">{'DeepTrace Production (outputs/best_model.keras)' if not is_synthetic and model_online else ('Model Unavailable' if not model_online else 'Prototype Demo')}</span>
                 </div>
             </div>
             """),
@@ -531,7 +550,7 @@ with tab_analyze:
         analyze_button = st.button(
             "RUN FORENSIC ANALYSIS",
             type="primary",
-            disabled=(target_video_path is None or not os.path.exists(selected_model_path)),
+            disabled=(target_video_path is None or selected_model_path is None or not os.path.exists(selected_model_path)),
             use_container_width=True,
             help="Execute spatio-temporal deepfake analysis across 10-frame uniform sequence.",
         )
